@@ -8,6 +8,67 @@ Input: $ARGUMENTS (module name, phase number, or "all" — default: current phas
 
 NO FEATURE EXITS THE LOOP UNTIL IT PASSES ALL TESTS. No exceptions. No "good enough." No "we'll fix it later."
 
+## Context Survival Protocol
+
+This command is designed to survive context rot, session death, and context window limits. It works by keeping ALL progress in files, not in conversation memory.
+
+### The Sprint Log (`.planning/sprint-log.md`)
+
+Before EVERY step, write what you're about to do to `.planning/sprint-log.md`. After every step, write what happened. This file is your memory across sessions.
+
+Format:
+```markdown
+# Sprint Log
+## Session started: [timestamp]
+## Current requirement: [text]
+## Status: BUILDING / TESTING / PERFECTING / COMPLETE
+## Attempt: 2/5
+## Files changed: [list]
+## Last test result: 22 passing, 1 failing
+## Failing test: [test name and error]
+## Notes: [what you tried, what worked, what didn't]
+```
+
+### WIP Commits (Work In Progress)
+
+Do NOT wait until all tests pass to commit. Commit after every meaningful change:
+- After writing implementation code: `wip: [requirement] — implementation, tests pending`
+- After writing tests: `wip: [requirement] — tests written, fixing failures`
+- After each fix attempt: `wip: [requirement] — fix attempt N, [X] passing`
+- After all tests pass: `feat: [requirement] — all tests passing` (the final commit)
+
+WIP commits mean: if the session dies, the next session starts with your code already written. It just needs to finish testing/fixing.
+
+### Session Resumption
+
+When this command starts, FIRST check for an existing sprint log:
+
+1. Read `.planning/sprint-log.md` — if it exists, you're RESUMING a previous session
+2. Read the status field:
+   - `BUILDING` → the previous session died during build. Check git for WIP commits. Continue building.
+   - `TESTING` → code was written but tests failed. Run tests, see what's failing, continue fixing.
+   - `PERFECTING` → in the middle of fix attempts. Read the attempt number and last error. Continue from there.
+   - `COMPLETE` → previous requirement finished. Move to next unchecked requirement.
+3. Do NOT re-read all planning files if sprint-log.md tells you what you need. Keep the context lean.
+
+### Context Rot Detection
+
+After completing each requirement, do a self-check:
+- "Am I still oriented? Do I know what phase I'm in, what I just built, what's next?"
+- If you feel uncertain about the project state, re-read `.planning/sprint-log.md` and `.planning/STATE.md`
+- If you have built 3+ requirements in this session, consider telling the user:
+  "I've built N requirements this session. Context is getting heavy. Recommend: commit, push, start a fresh session with `/sprint-build-perfect` to continue with clean context."
+
+### The 3-Requirement Checkpoint
+
+After every 3 completed requirements:
+1. Commit all work
+2. Push to remote
+3. Update sprint-log.md with a summary of what's done
+4. Tell the user: "Checkpoint: N requirements complete. Recommend fresh session to avoid context rot. Run `/sprint-build-perfect` in a new session to continue."
+
+The user can choose to continue or restart. Either way, nothing is lost — everything is in files and commits.
+
 ## Process
 
 ### Step 0: Orient + Detect GSD
@@ -45,11 +106,21 @@ For each unchecked requirement:
 
 #### 1a. BUILD
 
+**First, update the sprint log:**
+```markdown
+## Current requirement: [requirement text]
+## Status: BUILDING
+## Attempt: 1/5
+## Session: [new or resumed]
+```
+
 Read the requirement. Read relevant code. Follow existing patterns.
 
 - Write implementation code
 - Write unit tests for what you built
 - Run `npx tsc --noEmit` — fix any type errors
+- **WIP commit:** `wip: [requirement] — implementation + tests written`
+- **Update sprint log:** `Status: TESTING`
 
 #### 1b. UNIT TEST
 
@@ -86,17 +157,35 @@ If no Playwright tests exist for this feature, write one:
 
 #### 1d. PERFECT LOOP
 
+**Update sprint log:** `Status: PERFECTING`
+
 If ANY test fails (unit OR Playwright):
 
 ```
 ATTEMPT 1: Read the error. Fix the obvious cause. Re-run tests.
+  → Update sprint log: Attempt: 1/5, Last test result: X passing Y failing
+  → WIP commit: wip: [requirement] — fix attempt 1
+
 ATTEMPT 2: Read the error more carefully. Check edge cases. Fix. Re-run.
+  → Update sprint log: Attempt: 2/5
+  → WIP commit: wip: [requirement] — fix attempt 2
+
 ATTEMPT 3: Step back. Read the full test output. Check if the fix broke something else. Fix. Re-run.
+  → Update sprint log: Attempt: 3/5
+  → WIP commit: wip: [requirement] — fix attempt 3
+
 ATTEMPT 4: Minimal approach. Only touch the exact lines causing the failure. Re-run.
+  → Update sprint log: Attempt: 4/5
+  → WIP commit: wip: [requirement] — fix attempt 4
+
 ATTEMPT 5: If still failing, mark as STUCK. Add <!-- STUCK: [reason] --> to REQUIREMENTS.md. Move on.
+  → Update sprint log: Status: STUCK, Notes: [what was tried]
+  → Commit: stuck: [requirement] — 5 attempts exhausted, needs human review
 ```
 
 Maximum 5 attempts per feature. If it takes more than 5, a human needs to look at it.
+
+**Every attempt produces a WIP commit.** If the session dies on attempt 3, the next session reads the sprint log, sees "Attempt: 3/5", and picks up at attempt 4 — not from scratch.
 
 #### 1e. FEATURE COMPLETE — Update GSD State
 
