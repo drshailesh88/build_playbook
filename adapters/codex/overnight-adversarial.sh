@@ -46,8 +46,8 @@ capture_score() {
   local fail_count=0
   local total=0
 
-  # Run typecheck
-  if npm run typecheck 2>/dev/null; then
+  # Run typecheck (ScholarSync uses npx tsc directly, no npm script)
+  if npx tsc --noEmit 2>/dev/null; then
     typecheck_pass=1
   fi
 
@@ -192,12 +192,13 @@ BUILD this ONE requirement:
 1. Read existing code first — follow established patterns
 2. Write the implementation code
 3. Write tests for what you built
-4. Run: npm run typecheck && npm test
+4. Run: npx tsc --noEmit && npm test
 5. Do NOT check the box yet — the Adversary reviews first
 6. Do NOT commit yet
 
-If the requirement is too big, build the smallest meaningful slice." \
-    2>&1 | tee -a "$PROGRESS_FILE"
+If the requirement is too big, build the smallest meaningful slice."
+
+  echo "[BUILDER] Finished building: $REQ_TEXT" >> "$PROGRESS_FILE"
 
   # =========================================================================
   # LAYER 2: TEST — Automated score capture
@@ -230,9 +231,10 @@ Attempt 1: Fix the obvious bug.
 Attempt 2: Smaller fix. Only touch the lines that caused the failure.
 Attempt 3: Minimal change. If you can't fix it, revert your changes to the failing file.
 
-Run: npm run typecheck && npm test
-Fix ONLY what's broken. Do NOT add new features. Do NOT refactor." \
-        2>&1 | tee -a "$PROGRESS_FILE"
+Run: npx tsc --noEmit && npm test
+Fix ONLY what's broken. Do NOT add new features. Do NOT refactor."
+
+      echo "[ANNEAL] Heal attempt $heal complete" >> "$PROGRESS_FILE"
 
       HEAL_SCORE=$(capture_score)
       HEAL_PASS=$(echo "$HEAL_SCORE" | cut -d: -f2)
@@ -286,8 +288,9 @@ Your mission:
 6. Report what you found
 
 Be ruthless. Think like a hacker and a QA engineer combined.
-If you genuinely cannot find any bugs, say 'NO BUGS FOUND' and stop." \
-      2>&1 | tee -a "$PROGRESS_FILE"
+If you genuinely cannot find any bugs, say 'NO BUGS FOUND' and stop."
+
+    echo "[ADVERSARY] Round $adv_round complete" >> "$PROGRESS_FILE"
 
     # Check if adversary found bugs (new failures)
     ADV_SCORE=$(capture_score)
@@ -310,9 +313,10 @@ If you genuinely cannot find any bugs, say 'NO BUGS FOUND' and stop." \
 There are $ADV_FAIL failing tests. Fix the CODE (not the tests) to make them pass.
 The adversary's tests are valid — they found real bugs.
 
-Run: npm run typecheck && npm test
-Fix the bugs. Do not delete or modify the adversary's tests." \
-      2>&1 | tee -a "$PROGRESS_FILE"
+Run: npx tsc --noEmit && npm test
+Fix the bugs. Do not delete or modify the adversary's tests."
+
+    echo "[BUILDER] Fix attempt for adversary bugs complete" >> "$PROGRESS_FILE"
 
     FIX_SCORE=$(capture_score)
     FIX_PASS=$(echo "$FIX_SCORE" | cut -d: -f2)
