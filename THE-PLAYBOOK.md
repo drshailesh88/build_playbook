@@ -260,20 +260,55 @@ Using the UX brief + UI brief + competition screenshots:
 **Produces:** `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`
 **Readiness gate:** PRD must score ≥ 6/10 on clarity, user stories, scope, decisions, testability.
 
-### Step 5.2 — Build (Per Phase)
+### Step 5.2 — Build (Choose Your Builder)
 
-For each phase in the roadmap:
+You have 4 ways to build. Pick based on your situation:
 
+**Option A: Manual inside Claude Code (you're at the keyboard, learning)**
 ```
 /gsd:discuss-phase N    ← Flesh out implementation decisions
 /gsd:plan-phase N       ← Create atomic task plans
 /gsd:execute-phase N    ← Build with task loop
+/gsd:quick "fix the broken search"   ← Small tasks
 ```
 
-For small tasks that don't need full ceremony:
+**Option B: Adversarial — Claude builds, Codex attacks (best quality)**
 ```
-/gsd:quick "fix the broken search"
+/adversarial-claude-builds 10
 ```
+Claude writes the code. Codex (different company, different blind spots) tries to break it. What Claude misses, Codex catches. Uses Claude Max tokens for building + Codex tokens for review. Uses Karpathy autoresearch — test score must never decrease.
+
+**Option C: Adversarial — Codex builds, Claude attacks (saves Claude tokens)**
+```
+/adversarial-codex-builds 10
+```
+Codex writes the code (cheaper). Claude reviews with deeper reasoning (better adversary). Saves your Claude Max quota. Uses Karpathy autoresearch — test score must never decrease.
+
+**Option D: Overnight via terminal script (unattended, walk away)**
+```bash
+# In a separate terminal (not Claude Code):
+cp ~/Build\ Playbook/adapters/codex/overnight-adversarial.sh ./
+./overnight-adversarial.sh 75
+```
+Codex builds and attacks itself. Runs overnight. Autoresearch score gates + phase boundary regression detection. Review with `/where-am-i` + `/harden` in the morning.
+
+**Option E: GSD v2 (separate CLI, any model)**
+```bash
+# In a separate terminal:
+gsd
+/gsd migrate     ← reads your .planning/ files
+/gsd auto        ← builds overnight on GLM-5 or any cheap model
+```
+
+**When to use which:**
+
+| Situation | Use |
+|-----------|-----|
+| Learning the codebase, want control | Option A |
+| Want highest quality code | Option B (Claude builds, Codex attacks) |
+| Running low on Claude Max tokens | Option C (Codex builds, Claude attacks) |
+| Going to sleep, build overnight | Option D (terminal script) or E (GSD v2) |
+| Quick small fix | `/gsd:quick "fix the thing"` |
 
 ### Step 5.3 — Resume After a Break
 
@@ -458,6 +493,13 @@ Back to Phase 5 for the next milestone, or Phase 1 for a new feature/project.
 | `/gsd:plan-phase N` | After discussion | Phase number | Atomic task plans |
 | `/gsd:execute-phase N` | Building | Phase number | Built features |
 | `/gsd:quick "task"` | Small tasks | Task description | Quick fix |
+
+### Adversarial Build (Ralph Loop + GAN + Autoresearch)
+| Command | When | Input | Output |
+|---------|------|-------|--------|
+| `/adversarial-claude-builds` | Best quality build — Claude builds, Codex attacks | Iteration count (default 10) | Built + adversarially reviewed code |
+| `/adversarial-codex-builds` | Save Claude tokens — Codex builds, Claude attacks | Iteration count (default 10) | Built + adversarially reviewed code |
+| `./overnight-adversarial.sh N` | Overnight unattended build (run in terminal, not Claude Code) | Iteration count | Built code on a branch |
 
 ### Research & Design
 | Command | When | Input | Output |
