@@ -21,7 +21,9 @@
 #
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
+# Note: NOT using set -e because codex exec may return non-zero
+# exit codes even on successful completion. We handle errors manually.
 
 ITERATIONS=${1:-20}
 BRANCH="codex/$(date +%Y-%m-%d)"
@@ -196,7 +198,8 @@ BUILD this ONE requirement:
 5. Do NOT check the box yet — the Adversary reviews first
 6. Do NOT commit yet
 
-If the requirement is too big, build the smallest meaningful slice."
+If the requirement is too big, build the smallest meaningful slice." \
+    || true
 
   echo "[BUILDER] Finished building: $REQ_TEXT" >> "$PROGRESS_FILE"
 
@@ -232,7 +235,8 @@ Attempt 2: Smaller fix. Only touch the lines that caused the failure.
 Attempt 3: Minimal change. If you can't fix it, revert your changes to the failing file.
 
 Run: npx tsc --noEmit && npm test
-Fix ONLY what's broken. Do NOT add new features. Do NOT refactor."
+Fix ONLY what's broken. Do NOT add new features. Do NOT refactor." \
+        || true
 
       echo "[ANNEAL] Heal attempt $heal complete" >> "$PROGRESS_FILE"
 
@@ -288,7 +292,8 @@ Your mission:
 6. Report what you found
 
 Be ruthless. Think like a hacker and a QA engineer combined.
-If you genuinely cannot find any bugs, say 'NO BUGS FOUND' and stop."
+If you genuinely cannot find any bugs, say 'NO BUGS FOUND' and stop." \
+      || true
 
     echo "[ADVERSARY] Round $adv_round complete" >> "$PROGRESS_FILE"
 
@@ -314,7 +319,8 @@ There are $ADV_FAIL failing tests. Fix the CODE (not the tests) to make them pas
 The adversary's tests are valid — they found real bugs.
 
 Run: npx tsc --noEmit && npm test
-Fix the bugs. Do not delete or modify the adversary's tests."
+Fix the bugs. Do not delete or modify the adversary's tests." \
+      || true
 
     echo "[BUILDER] Fix attempt for adversary bugs complete" >> "$PROGRESS_FILE"
 
