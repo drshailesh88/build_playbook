@@ -180,7 +180,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   # =========================================================================
   echo -e "${GREEN}[BUILDER] Writing code...${NC}"
 
-  codex --full-auto \
+  codex exec --full-auto \
     "You are the BUILDER agent.
 
 Read AGENTS.md for project rules.
@@ -221,7 +221,7 @@ If the requirement is too big, build the smallest meaningful slice."
     for ((heal=1; heal<=$MAX_HEAL_ATTEMPTS; heal++)); do
       echo -e "${YELLOW}[ANNEAL] Heal attempt $heal/$MAX_HEAL_ATTEMPTS (cooling down)...${NC}"
 
-      codex --full-auto \
+      codex exec --full-auto \
         "You are the HEALER agent. Tests are failing after building: $REQ_TEXT
 
 The test pass count DROPPED from $BEFORE_PASS to $AFTER_BUILD_PASS.
@@ -269,7 +269,7 @@ Fix ONLY what's broken. Do NOT add new features. Do NOT refactor."
     # Get the diff of what was built
     DIFF=$(git diff --no-color 2>/dev/null | head -500)
 
-    codex --full-auto \
+    codex exec --full-auto \
       "You are the ADVERSARY agent. Your job is to BREAK the code that was just written.
 
 The BUILDER just implemented: $REQ_TEXT
@@ -307,7 +307,7 @@ If you genuinely cannot find any bugs, say 'NO BUGS FOUND' and stop."
     # ─── Adversary found bugs. Builder must fix them. ────────────────────
     echo -e "${YELLOW}[BUILDER] Fixing adversary-found bugs...${NC}"
 
-    codex --full-auto \
+    codex exec --full-auto \
       "You are the BUILDER agent. The ADVERSARY found bugs in your code.
 
 There are $ADV_FAIL failing tests. Fix the CODE (not the tests) to make them pass.
