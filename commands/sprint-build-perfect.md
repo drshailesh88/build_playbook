@@ -51,23 +51,65 @@ When this command starts, FIRST check for an existing sprint log:
    - `COMPLETE` → previous requirement finished. Move to next unchecked requirement.
 3. Do NOT re-read all planning files if sprint-log.md tells you what you need. Keep the context lean.
 
-### Context Rot Detection
+### Context Rot Detection — The Sanity Test
 
-After completing each requirement, do a self-check:
-- "Am I still oriented? Do I know what phase I'm in, what I just built, what's next?"
-- If you feel uncertain about the project state, re-read `.planning/sprint-log.md` and `.planning/STATE.md`
-- If you have built 3+ requirements in this session, consider telling the user:
-  "I've built N requirements this session. Context is getting heavy. Recommend: commit, push, start a fresh session with `/sprint-build-perfect` to continue with clean context."
+You cannot read your own context usage. But you CAN detect rot through proxy signals. After EVERY completed requirement, run this sanity test:
+
+**The 5-Second Orientation Test:**
+Without re-reading any files, answer these from memory:
+1. What phase/slice am I in?
+2. What did I just build?
+3. What is the next unchecked requirement?
+4. How many tests were passing last time I ran them?
+5. What is the project's test command?
+
+If you cannot confidently answer ALL 5 — you are in context rot. Immediately:
+1. Commit all work with `wip: context checkpoint — saving before session restart`
+2. Push to remote
+3. Update sprint-log.md
+4. Tell the user:
+   ```
+   CONTEXT HEALTH CHECK: FAILED
+   I can no longer confidently track the project state from memory.
+   This is normal after extended sessions. Nothing is lost.
+
+   Action: Start a fresh session and run /sprint-build-perfect
+   All progress is saved in sprint-log.md + git commits.
+   ```
+5. STOP. Do not build another requirement in this state.
+
+**Proxy Signals That Mean "Stop Soon":**
+
+| Signal | What it means | Action |
+|--------|--------------|--------|
+| You re-read a file you already read this session | Memory is fading | Finish current requirement, then checkpoint |
+| You make the same fix twice | Losing track of what you tried | Stop after this requirement |
+| You ask the user a question you should know the answer to | Context is degrading | Checkpoint immediately |
+| You're on your 4th+ requirement this session | Getting heavy | Checkpoint after this one |
+| A tool call returns compaction warnings | Context was compressed | Finish current requirement, then stop |
+| You feel the urge to "re-orient" or "let me check where we are" | You've lost the thread | Checkpoint immediately |
+
+**The Hard Rule: Never build more than 5 requirements in a single session.** After 5, ALWAYS checkpoint and recommend a fresh session — even if everything feels fine. Context rot is invisible to the one experiencing it.
 
 ### The 3-Requirement Checkpoint
 
 After every 3 completed requirements:
-1. Commit all work
-2. Push to remote
-3. Update sprint-log.md with a summary of what's done
-4. Tell the user: "Checkpoint: N requirements complete. Recommend fresh session to avoid context rot. Run `/sprint-build-perfect` in a new session to continue."
+1. Run the 5-Second Orientation Test
+2. Commit all work
+3. Push to remote
+4. Update sprint-log.md with a summary of what's done
+5. Tell the user:
+   ```
+   CHECKPOINT: 3 requirements complete this session.
+   Context health: [PASS if orientation test passed / DEGRADING if struggled]
 
-The user can choose to continue or restart. Either way, nothing is lost — everything is in files and commits.
+   Recommendation: Fresh session with /sprint-build-perfect
+   Or type "keep going" to continue (max 2 more requirements).
+   ```
+
+After 5 total requirements: HARD STOP. No "keep going" option. Commit, push, tell the user to restart.
+
+The user can choose to continue at the 3-requirement checkpoint. But at 5, you stop. Period.
 
 ## Process
 
