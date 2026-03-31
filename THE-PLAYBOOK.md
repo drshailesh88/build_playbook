@@ -262,7 +262,7 @@ Using the UX brief + UI brief + competition screenshots:
 
 ### Step 5.2 — Build (Choose Your Builder)
 
-You have 4 ways to build. Pick based on your situation:
+You have 6 ways to build. Pick based on your situation:
 
 **Option A: Manual inside Claude Code (you're at the keyboard, learning)**
 ```
@@ -272,19 +272,27 @@ You have 4 ways to build. Pick based on your situation:
 /gsd:quick "fix the broken search"   ← Small tasks
 ```
 
-**Option B: Adversarial — Claude builds, Codex attacks (best quality)**
+**Option B: Sprint Build Perfect — build, test, perfect loop (recommended)**
+```
+/sprint-build-perfect           ← build current phase
+/sprint-build-perfect 3         ← build Phase 3
+/sprint-build-perfect all       ← build everything
+```
+Claude builds each feature, runs unit tests + Playwright E2E tests, and keeps iterating until ALL tests pass. Features do NOT exit the loop until perfected. Full QA sweep at phase boundaries. GSD-aware — tracks progress in `.gsd/` or `.planning/` automatically. Safe to restart in a fresh session — it reads state from disk and picks up where you left off.
+
+**Option C: Adversarial — Claude builds, Codex attacks (best quality)**
 ```
 /adversarial-claude-builds 10
 ```
 Claude writes the code. Codex (different company, different blind spots) tries to break it. What Claude misses, Codex catches. Uses Claude Max tokens for building + Codex tokens for review. Uses Karpathy autoresearch — test score must never decrease.
 
-**Option C: Adversarial — Codex builds, Claude attacks (saves Claude tokens)**
+**Option D: Adversarial — Codex builds, Claude attacks (saves Claude tokens)**
 ```
 /adversarial-codex-builds 10
 ```
 Codex writes the code (cheaper). Claude reviews with deeper reasoning (better adversary). Saves your Claude Max quota. Uses Karpathy autoresearch — test score must never decrease.
 
-**Option D: Overnight via terminal script (unattended, walk away)**
+**Option E: Overnight via terminal script (unattended, walk away)**
 ```bash
 # In a separate terminal (not Claude Code):
 cp ~/Build\ Playbook/adapters/codex/overnight-adversarial.sh ./
@@ -292,7 +300,7 @@ cp ~/Build\ Playbook/adapters/codex/overnight-adversarial.sh ./
 ```
 Codex builds and attacks itself. Runs overnight. Autoresearch score gates + phase boundary regression detection. Review with `/where-am-i` + `/harden` in the morning.
 
-**Option E: GSD v2 (separate CLI, any model)**
+**Option F: GSD v2 (separate CLI, any model)**
 ```bash
 # In a separate terminal:
 gsd
@@ -304,10 +312,11 @@ gsd
 
 | Situation | Use |
 |-----------|-----|
-| Learning the codebase, want control | Option A |
-| Want highest quality code | Option B (Claude builds, Codex attacks) |
-| Running low on Claude Max tokens | Option C (Codex builds, Claude attacks) |
-| Going to sleep, build overnight | Option D (terminal script) or E (GSD v2) |
+| Learning the codebase, want control | Option A (manual GSD) |
+| Building features with full QA | **Option B (`/sprint-build-perfect`) — recommended** |
+| Want highest quality, two-company review | Option C (Claude builds, Codex attacks) |
+| Running low on Claude Max tokens | Option D (Codex builds, Claude attacks) |
+| Going to sleep, build overnight | Option E (terminal script) or F (GSD v2) |
 | Quick small fix | `/gsd:quick "fix the thing"` |
 
 ### Step 5.3 — Resume After a Break
@@ -497,7 +506,8 @@ Back to Phase 5 for the next milestone, or Phase 1 for a new feature/project.
 ### Adversarial Build (Ralph Loop + GAN + Autoresearch)
 | Command | When | Input | Output |
 |---------|------|-------|--------|
-| `/adversarial-claude-builds` | Best quality build — Claude builds, Codex attacks | Iteration count (default 10) | Built + adversarially reviewed code |
+| `/sprint-build-perfect` | **Recommended** — build, test, perfect loop with Playwright QA | Phase number, "all", or nothing (current phase) | Built + tested + perfected code |
+| `/adversarial-claude-builds` | Best quality — Claude builds, Codex attacks | Iteration count (default 10) | Built + adversarially reviewed code |
 | `/adversarial-codex-builds` | Save Claude tokens — Codex builds, Claude attacks | Iteration count (default 10) | Built + adversarially reviewed code |
 | `./overnight-adversarial.sh N` | Overnight unattended build (run in terminal, not Claude Code) | Iteration count | Built code on a branch |
 
