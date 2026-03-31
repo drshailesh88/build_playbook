@@ -10,20 +10,34 @@ NO FEATURE EXITS THE LOOP UNTIL IT PASSES ALL TESTS. No exceptions. No "good eno
 
 ## Process
 
-### Step 0: Orient
+### Step 0: Orient + Detect GSD
 
+First, detect which project management system is in use:
+
+**If `.gsd/` directory exists (GSD v2):**
+Read these files in order:
+1. `.gsd/STATE.md` — current milestone, slice, task
+2. `.gsd/milestones/M001/M001-ROADMAP.md` — slice list with checkboxes
+3. Current slice plan: `.gsd/milestones/M001/S[NN]-PLAN.md` — task decomposition with must-haves
+4. `AGENTS.md` — project-specific rules (if exists)
+
+Work units = GSD tasks within slices. Each task has must-haves (truths, artifacts, key links).
+
+**If `.planning/` directory exists (Playbook / GSD v1):**
 Read these files:
 1. `.planning/STATE.md` — current phase
 2. `.planning/REQUIREMENTS.md` — the checklist
 3. `.planning/ROADMAP.md` — phase order and context
 4. `AGENTS.md` — project-specific rules (if exists)
 
-Identify which requirements to build:
-- If $ARGUMENTS is a phase number: build all unchecked requirements for that phase
-- If $ARGUMENTS is "all": build all unchecked requirements across all phases
-- If no argument: build unchecked requirements for the current phase from STATE.md
+Work units = unchecked requirements in REQUIREMENTS.md.
 
-Report: "Phase N: X unchecked requirements to build"
+**Identify what to build:**
+- If $ARGUMENTS is a phase/slice number: build all unchecked items for that phase/slice
+- If $ARGUMENTS is "all": build all unchecked items across all phases/slices
+- If no argument: build unchecked items for the current phase/slice from STATE.md
+
+Report: "Phase/Slice N: X items to build | Tracking: GSD v2 / Playbook"
 
 ### Step 1: The Build-Test-Perfect Loop
 
@@ -84,21 +98,40 @@ ATTEMPT 5: If still failing, mark as STUCK. Add <!-- STUCK: [reason] --> to REQU
 
 Maximum 5 attempts per feature. If it takes more than 5, a human needs to look at it.
 
-#### 1e. FEATURE COMPLETE
+#### 1e. FEATURE COMPLETE — Update GSD State
 
 When ALL tests pass (unit + Playwright):
 
+**If GSD v2 (`.gsd/` exists):**
+- Write task summary to `.gsd/milestones/M001/T[NN]-SUMMARY.md`:
+  ```markdown
+  ---
+  task: T[NN]
+  status: done
+  tests_pass: true
+  attempts: N
+  ---
+  [What was built, what was tested, any decisions made]
+  ```
+- If this was the last task in the slice, mark the slice complete in `M001-ROADMAP.md`
+- Update `.gsd/STATE.md` with current progress
+
+**If Playbook (`.planning/` exists):**
 - Check the box in REQUIREMENTS.md: `- [ ]` → `- [x]`
-- Commit: `feat: [requirement summary] (Phase N) — all tests passing`
+- Update `.planning/STATE.md` with current progress
+
+**Both:**
+- Commit: `feat: [requirement/task summary] (Phase/Slice N) — all tests passing`
 - Report:
   ```
-  ✓ [requirement text]
+  [requirement/task text]
     Unit tests: X passing
     Playwright: Y passing
     Attempts: N/5
+    Tracked in: GSD v2 / Playbook
   ```
 
-Move to the next unchecked requirement.
+Move to the next unchecked requirement/task.
 
 ### Step 2: Phase Complete — Full QA Sweep
 
@@ -170,12 +203,16 @@ Next: /playbook:where-am-i for next phase
 
 ### Step 4: Update State
 
-Update `.planning/STATE.md`:
-- Mark current phase as COMPLETE
-- Set next phase as current
-- Record completion date
+**If GSD v2:**
+- Mark current slice as complete in `M001-ROADMAP.md`
+- Write slice UAT script to `.gsd/milestones/M001/S[NN]-UAT.md`
+- Update `.gsd/STATE.md` — advance to next slice
+- Commit: `milestone(S[NN]): [slice title] complete — all tests passing`
 
-Commit: `milestone: Phase N complete — all tests passing`
+**If Playbook:**
+- Update `.planning/STATE.md` — mark current phase COMPLETE, set next phase as current
+- Record completion date
+- Commit: `milestone: Phase N complete — all tests passing`
 
 ## Rules
 
