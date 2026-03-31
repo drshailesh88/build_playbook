@@ -126,6 +126,8 @@ echo ""
 
 PREV_PHASE=$(get_current_phase)
 PHASE_START_PASS=$BASELINE_PASS
+LAST_REQ=""
+CONSECUTIVE_SKIPS=0
 
 for ((i=1; i<=$ITERATIONS; i++)); do
 
@@ -168,6 +170,15 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   fi
 
   REQ_TEXT=$(echo "$NEXT_REQ" | cut -d: -f2-)
+  REQ_LINE_NUM=$(echo "$NEXT_REQ" | cut -d: -f1)
+
+  # ─── Deduplication: detect stuck loop ───────────────────────────────────
+  if [ "$REQ_TEXT" = "$LAST_REQ" ]; then
+    echo -e "${RED}STUCK: Same requirement as last iteration. Checkbox update failed. STOPPING.${NC}"
+    echo "STUCK: Same requirement repeated — checkbox update likely failed" >> "$PROGRESS_FILE"
+    break
+  fi
+  LAST_REQ="$REQ_TEXT"
 
   echo -e "${BLUE}=== Iteration $i/$ITERATIONS | Phase $CURRENT_PHASE ===${NC}"
   echo -e "Requirement: $REQ_TEXT"
@@ -202,6 +213,22 @@ If the requirement is too big, build the smallest meaningful slice." \
     || true
 
   echo "[BUILDER] Finished building: $REQ_TEXT" >> "$PROGRESS_FILE"
+
+  # ─── Check if Codex actually produced changes (Bug 3: detect errors/rate limits)
+  if [ -z "$(git diff --name-only 2>/dev/null)" ]; then
+    echo -e "${RED}[BUILDER] No code changes detected. Codex may have errored. Skipping.${NC}"
+    echo "[$i] SKIPPED: No code changes from builder" >> "$PROGRESS_FILE"
+
+    # Check if this is 3rd consecutive skip — if so, likely rate limited
+    CONSECUTIVE_SKIPS=$((CONSECUTIVE_SKIPS + 1))
+    if [ "$CONSECUTIVE_SKIPS" -ge 3 ]; then
+      echo -e "${RED}3 consecutive empty iterations. Codex likely rate-limited. STOPPING.${NC}"
+      echo "STOPPED: 3 consecutive empty builder iterations" >> "$PROGRESS_FILE"
+      break
+    fi
+    continue
+  fi
+  CONSECUTIVE_SKIPS=0
 
   # =========================================================================
   # LAYER 2: TEST — Automated score capture
@@ -361,8 +388,8 @@ Fix the bugs. Do not delete or modify the adversary's tests." \
   # =========================================================================
   echo -e "${GREEN}[COMMIT] Score held or improved. Committing.${NC}"
 
-  # Check the requirement box
-  sed -i '' "s/- \[ \] $(echo "$REQ_TEXT" | sed 's/[[\.*^$()+?{|]/\\&/g' | head -c 60)/- [x] $(echo "$REQ_TEXT" | head -c 60)/" .planning/REQUIREMENTS.md 2>/dev/null || true
+  # Check the requirement box by line number (avoids regex issues with special chars)
+  sed -i '' "${REQ_LINE_NUM}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
 
   git add -A
   git commit -m "feat: $(echo "$REQ_TEXT" | head -c 60) (Phase $CURRENT_PHASE)
