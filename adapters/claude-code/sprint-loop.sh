@@ -48,6 +48,7 @@ echo -e "Requirements: ${GREEN}$DONE done${NC} / $TOTAL total / ${YELLOW}$REMAIN
 echo ""
 
 # ─── The Loop ────────────────────────────────────────────────────────────────
+CONSECUTIVE_EMPTY=0
 while true; do
   SESSION=$((SESSION + 1))
 
@@ -108,7 +109,7 @@ while true; do
 
     # Give it one more try, then stop
     CONSECUTIVE_EMPTY=$((CONSECUTIVE_EMPTY + 1))
-    if [ "${CONSECUTIVE_EMPTY:-0}" -ge 2 ]; then
+    if [ "$CONSECUTIVE_EMPTY" -ge 2 ]; then
       echo -e "${RED}2 consecutive empty sessions. Stopping.${NC}"
       echo "$(date): STOPPED — 2 consecutive empty sessions" >> "$LOOP_LOG"
       break

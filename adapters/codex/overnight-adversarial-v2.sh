@@ -312,6 +312,23 @@ with open('.planning/requirements.json', 'w') as f:
 "
 }
 
+sync_json_to_markdown() {
+  # Sync requirements.json state back to REQUIREMENTS.md so V1 tools stay in sync
+  python3 -c "
+import json, re
+with open('.planning/requirements.json') as f:
+    data = json.load(f)
+with open('.planning/REQUIREMENTS.md') as f:
+    content = f.read()
+for r in data['requirements']:
+    text_prefix = re.escape(r['text'][:60])
+    if r['done']:
+        content = re.sub(r'^- \[ \] ' + text_prefix, '- [x] ' + r['text'][:60], content, count=1, flags=re.MULTILINE)
+with open('.planning/REQUIREMENTS.md', 'w') as f:
+    f.write(content)
+" 2>/dev/null || true
+}
+
 increment_requirement_attempts() {
   local req_id=$1
   python3 -c "
@@ -515,6 +532,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   if [ "$REQ_ID" = "$LAST_REQ_ID" ]; then
     echo -e "${RED}STUCK: Same requirement $REQ_ID as last iteration. Marking stuck.${NC}"
     mark_requirement_stuck "$REQ_ID" "Same requirement repeated - marking/update failed"
+    sync_json_to_markdown
     notify "STUCK on $REQ_ID: Same requirement repeated. Marked stuck, moving on."
     LAST_REQ_ID=""
     continue
@@ -920,11 +938,12 @@ Builder → Tests → Adversary ($MAX_ADVERSARY_ROUNDS rounds) → Architect →
   git worktree remove "$WORKTREE_DIR" 2>/dev/null || true
   git branch -d "$WORKTREE_BRANCH" 2>/dev/null || true
 
-  # Mark requirement done in JSON
+  # Mark requirement done in JSON and sync back to markdown
   mark_requirement_done "$REQ_ID"
+  sync_json_to_markdown
 
-  # Commit the updated requirements.json
-  git add .planning/requirements.json .planning/build-scores.jsonl .planning/ralph-status.json progress.txt 2>/dev/null || true
+  # Commit the updated requirements.json and REQUIREMENTS.md
+  git add .planning/requirements.json .planning/REQUIREMENTS.md .planning/build-scores.jsonl .planning/ralph-status.json progress.txt 2>/dev/null || true
   git commit -m "chore: mark $REQ_ID done, update tracking files" 2>/dev/null || true
 
   CURRENT_SCORE=$FINAL_PASS

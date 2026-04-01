@@ -28,7 +28,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   echo "Working on: $NEXT"
 
   # Run Codex in full-auto mode
-  codex --full-auto \
+  codex exec --full-auto \
     "Read .planning/STATE.md to find the current phase.
      Read .planning/REQUIREMENTS.md and find this requirement: $NEXT
      Build ONLY this one requirement following the instructions in AGENTS.md.

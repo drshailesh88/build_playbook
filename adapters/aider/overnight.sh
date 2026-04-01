@@ -10,6 +10,14 @@ BRANCH="overnight/$(date +%Y-%m-%d)"
 echo "Starting overnight build: $ITERATIONS iterations with $MODEL"
 echo "Branch: $BRANCH"
 
+# Require clean working tree to avoid data loss on revert
+DIRTY_FILES=$(git status --porcelain 2>/dev/null | grep -v "^??" | wc -l | tr -d ' ')
+if [ "$DIRTY_FILES" -gt 0 ]; then
+  echo "Working tree has $DIRTY_FILES uncommitted changes."
+  echo "Commit or stash them first to avoid data loss on revert."
+  exit 1
+fi
+
 git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 
 for ((i=1; i<=$ITERATIONS; i++)); do
@@ -26,6 +34,9 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   fi
 
   echo "Working on: $NEXT"
+
+  # Snapshot untracked files before this iteration
+  ITER_UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | sort)
 
   # Run Aider WITHOUT auto-commits
   aider --model "$MODEL" \
@@ -52,9 +63,13 @@ Run any available test commands to verify your work." \
     git add -A
     git commit -m "feat: $(echo "$NEXT" | cut -d: -f2- | head -c 60) (overnight)" 2>/dev/null || true
   else
-    echo "[$i] Tests FAILED — reverting all uncommitted changes" >> progress.txt
+    echo "[$i] Tests FAILED — reverting uncommitted changes from this iteration" >> progress.txt
+    # Only clean files created in this iteration (not pre-existing untracked files)
+    ITER_NEW=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_UNTRACKED") - 2>/dev/null)
+    if [ -n "$ITER_NEW" ]; then
+      echo "$ITER_NEW" | xargs rm -f 2>/dev/null || true
+    fi
     git checkout -- . 2>/dev/null || true
-    git clean -fd 2>/dev/null || true
   fi
 done
 
