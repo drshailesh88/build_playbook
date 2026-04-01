@@ -81,10 +81,14 @@ capture_score() {
 
   total=$((pass_count + fail_count))
 
-  # If we couldn't parse anything, check npm test exit code
+  # FAIL CLOSED: if we couldn't parse anything, use test command exit code
   if [ "$total" -eq 0 ]; then
     if npm test 2>/dev/null; then
       pass_count=1
+      total=1
+    else
+      # Tests failed but we can't parse output — fail closed
+      fail_count=1
       total=1
     fi
   fi
@@ -503,26 +507,35 @@ Fix the bugs. Do not delete or modify the adversary's tests." \
   # Check the requirement box by line number (avoids regex issues with special chars)
   portable_sed_i "${REQ_LINE_NUM}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
 
-  # Only stage files changed/created in THIS iteration (not pre-existing untracked files)
+  # Stage only changed + new files from this iteration
   CHANGED_FILES=$(git diff --name-only 2>/dev/null)
-  NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_START_UNTRACKED") - 2>/dev/null)
+  ITER_NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_START_UNTRACKED") - 2>/dev/null)
   if [ -n "$CHANGED_FILES" ]; then
     echo "$CHANGED_FILES" | xargs git add 2>/dev/null || true
   fi
-  if [ -n "$NEW_FILES" ]; then
-    echo "$NEW_FILES" | xargs git add 2>/dev/null || true
+  if [ -n "$ITER_NEW_FILES" ]; then
+    echo "$ITER_NEW_FILES" | xargs git add 2>/dev/null || true
   fi
   git add .planning/REQUIREMENTS.md .planning/build-scores.jsonl progress.txt 2>/dev/null || true
-  git commit -m "feat: $(echo "$REQ_TEXT" | head -c 60) (Phase $CURRENT_PHASE)
+
+  # Commit — check exit code, don't swallow failure
+  COMMIT_MSG="feat: $(echo "$REQ_TEXT" | head -c 60) (Phase $CURRENT_PHASE)
 
 Ralph iteration $i. Score: $FINAL_PASS passing ($((FINAL_PASS - BEFORE_PASS)) net).
-Builder → Tests → Adversary ($MAX_ADVERSARY_ROUNDS rounds) → Verified." \
-    2>/dev/null || true
+Builder → Tests → Adversary ($MAX_ADVERSARY_ROUNDS rounds) → Verified."
 
-  echo "[$i] COMMITTED: $REQ_TEXT | Score: $BEFORE_PASS → $FINAL_PASS" >> "$PROGRESS_FILE"
-  log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "COMMITTED"
-
-  echo -e "${GREEN}Done. Score: $BEFORE_PASS → $FINAL_PASS (+$((FINAL_PASS - BEFORE_PASS)))${NC}"
+  if git commit -m "$COMMIT_MSG" 2>/dev/null; then
+    echo "[$i] COMMITTED: $REQ_TEXT | Score: $BEFORE_PASS → $FINAL_PASS" >> "$PROGRESS_FILE"
+    log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "COMMITTED"
+    echo -e "${GREEN}Done. Score: $BEFORE_PASS → $FINAL_PASS (+$((FINAL_PASS - BEFORE_PASS)))${NC}"
+  else
+    echo -e "${RED}[COMMIT] git commit failed. Undoing checkbox and aborting iteration.${NC}"
+    # Undo the checkbox
+    portable_sed_i "${REQ_LINE_NUM}s/- \[x\]/- [ ]/" .planning/REQUIREMENTS.md
+    git reset HEAD 2>/dev/null || true
+    echo "[$i] COMMIT FAILED: $REQ_TEXT — git commit returned non-zero" >> "$PROGRESS_FILE"
+    log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "COMMIT_FAILED"
+  fi
   echo ""
 done
 
