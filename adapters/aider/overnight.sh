@@ -20,10 +20,11 @@ echo "Starting overnight build: $ITERATIONS iterations with $MODEL"
 echo "Branch: $BRANCH"
 
 # Require clean working tree to avoid data loss on revert
-DIRTY_FILES=$(git status --porcelain 2>/dev/null | grep -v "^??" | wc -l | tr -d ' ')
-if [ "$DIRTY_FILES" -gt 0 ]; then
-  echo "Working tree has $DIRTY_FILES uncommitted changes."
-  echo "Commit or stash them first to avoid data loss on revert."
+DIRTY=$(git status --porcelain 2>/dev/null | grep -v "^??" | wc -l | tr -d ' ')
+UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+if [ "$DIRTY" -gt 0 ] || [ "$UNTRACKED" -gt 0 ]; then
+  echo "Working tree has $DIRTY uncommitted changes and $UNTRACKED untracked files."
+  echo "Commit, stash, or .gitignore them first to avoid committing unrelated files."
   exit 1
 fi
 
@@ -69,7 +70,12 @@ Run any available test commands to verify your work." \
     if [ -n "$REQ_LINE" ]; then
       portable_sed_i "${REQ_LINE}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
     fi
-    git add -A
+    # Stage only files changed/created in this iteration
+    CHANGED=$(git diff --name-only 2>/dev/null)
+    NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_UNTRACKED") - 2>/dev/null)
+    [ -n "$CHANGED" ] && echo "$CHANGED" | xargs git add 2>/dev/null || true
+    [ -n "$NEW_FILES" ] && echo "$NEW_FILES" | xargs git add 2>/dev/null || true
+    git add .planning/REQUIREMENTS.md progress.txt 2>/dev/null || true
     git commit -m "feat: $(echo "$NEXT" | cut -d: -f2- | head -c 60) (overnight)" 2>/dev/null || true
   else
     echo "[$i] Tests FAILED — reverting uncommitted changes from this iteration" >> progress.txt

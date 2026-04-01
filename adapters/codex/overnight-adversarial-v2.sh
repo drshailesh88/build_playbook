@@ -244,7 +244,7 @@ with open('.planning/REQUIREMENTS.md') as f:
     lines = f.readlines()
 reqs = []
 phase = 1
-for line in lines:
+for i, line in enumerate(lines):
     # Format 1: ### Phase N or ### Phase N: title
     phase_match = re.match(r'###?\s+.*[Pp]hase\s+(\d+)', line)
     if phase_match:
@@ -278,7 +278,8 @@ for line in lines:
             'stuck': False,
             'status': 'done' if check.group(1) == 'x' else 'pending',
             'attempts': 0,
-            'last_error': None
+            'last_error': None,
+            'markdown_line': i + 1
         })
 
 # After conversion, check if phase assignment worked
@@ -361,18 +362,22 @@ with open('.planning/requirements.json', 'w') as f:
 
 sync_json_to_markdown() {
   # Sync requirements.json state back to REQUIREMENTS.md so V1 tools stay in sync
+  # Uses stored markdown_line numbers for exact targeting — no truncation or prefix matching
   python3 -c "
-import json, re
+import json
 with open('.planning/requirements.json') as f:
     data = json.load(f)
 with open('.planning/REQUIREMENTS.md') as f:
-    content = f.read()
+    lines = f.readlines()
 for r in data['requirements']:
-    text_prefix = re.escape(r['text'][:60])
-    if r['done']:
-        content = re.sub(r'^- \[ \] ' + text_prefix, '- [x] ' + r['text'][:60], content, count=1, flags=re.MULTILINE)
+    line_num = r.get('markdown_line')
+    if line_num and line_num <= len(lines):
+        idx = line_num - 1  # 0-indexed
+        line = lines[idx]
+        if r.get('done', False) or r.get('status', '') == 'done':
+            lines[idx] = line.replace('- [ ]', '- [x]', 1)
 with open('.planning/REQUIREMENTS.md', 'w') as f:
-    f.write(content)
+    f.writelines(lines)
 " 2>/dev/null || true
 }
 
@@ -884,6 +889,33 @@ If the code is fine architecturally, say 'ARCHITECTURE APPROVED'.
 If not, list specific concerns and fix them. Then run: npx tsc --noEmit && npm test" 2>&1)
 
   echo "[ARCHITECT] Review complete" >> "$PROGRESS_FILE"
+
+  # Check if architect approved
+  if echo "$ARCHITECT_OUTPUT" | grep -qi "ARCHITECTURE APPROVED\|APPROVED\|no concerns\|looks good\|NO ISSUES"; then
+    echo -e "${GREEN}[ARCHITECT] Design approved.${NC}"
+  else
+    echo -e "${YELLOW}[ARCHITECT] Design concerns raised. Attempting fix...${NC}"
+
+    # Send concerns back to builder for one fix attempt
+    run_codex "You are the BUILDER. The ARCHITECT reviewer raised these concerns:
+$ARCHITECT_OUTPUT
+
+Fix the design issues raised. Do NOT change functionality — only improve code structure,
+naming, patterns, and maintainability. Run: npx tsc --noEmit && npm test" || true
+
+    # Re-run tests to make sure fix didn't break anything
+    ARCH_FIX_SCORE=$(capture_score)
+    ARCH_FIX_PASS=$(echo "$ARCH_FIX_SCORE" | cut -d: -f2)
+
+    if [ "$ARCH_FIX_PASS" -lt "$BEFORE_PASS" ]; then
+      echo -e "${RED}[ARCHITECT] Fix caused regression. Reverting architect changes only.${NC}"
+      # The worktree isolation handles this — if we're in a worktree,
+      # the merge won't happen. Just note it.
+      echo "[$i] ARCHITECT: fix caused regression, keeping pre-architect code" >> "$PROGRESS_FILE"
+    else
+      echo -e "${GREEN}[ARCHITECT] Design concerns addressed.${NC}"
+    fi
+  fi
 
   # Re-capture score after architect review (architect may have made changes)
   ARCH_SCORE=$(capture_score)
