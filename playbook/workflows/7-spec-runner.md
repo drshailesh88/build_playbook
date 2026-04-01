@@ -8,7 +8,7 @@ Optional: $ARGUMENTS (module name to run one module, or "all" for everything in 
 
 Spec files describe WHAT to test as checkpoints. This command turns those checkpoints into executable Playwright tests, runs them, and records the results. Failed checkpoints become fix targets for the self-annealing loop.
 
-Adapted from ScholarSync's qa/controller.ts + spec-to-playwright.ts — battle-tested across 376 specs and 12,804 checkpoints.
+Adapted from a production qa/controller + spec-to-playwright pipeline — battle-tested across hundreds of specs and thousands of checkpoints.
 
 ## Prerequisites
 

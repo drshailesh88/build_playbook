@@ -168,7 +168,7 @@ git commit -m "harden($ARGUMENTS): <N>/<total> features tested and passing — p
 If the project has a quality scorer, run it at the end:
 
 ```bash
-# ScholarSync pattern
+# Production pattern
 test -f quality-score.mjs && node quality-score.mjs && cat quality-score.json
 
 # Or any custom scorer

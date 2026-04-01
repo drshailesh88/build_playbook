@@ -1,4 +1,4 @@
-# ScholarSync — Development Workflow Reference
+# Development Workflow Reference
 
 ## The Full Journey: Idea → Shipped Feature
 
@@ -75,7 +75,7 @@ Saves the decisions to a dated file in `.planning/decisions/`. Takes 2 minutes. 
 | `/prd-to-gsd` | Custom | GSD new-milestone + Superpowers hard-gate + Cole Medin PRP scoring |
 | `/where-am-i` | Custom | GSD progress routing + runesleo memory pattern |
 | `/anneal-check` | Custom | Superpowers verification-before-completion + Cole Medin validation loop |
-| `/generate-feature-doc` | Custom | shinpr recipe-reverse-engineer + ScholarSync doc-feature AST pattern |
+| `/generate-feature-doc` | Custom | shinpr recipe-reverse-engineer + doc-feature AST pattern |
 | `/verify-with-codex` | Custom | levnikolaevich 4-level quality gate + Superpowers two-stage review |
 | `verification-before-completion` | Skill | Jesse Vincent Superpowers (direct adaptation) |
 | `/grill-me` | Skill | Matt Pocock |
@@ -92,7 +92,7 @@ Saves the decisions to a dated file in `.planning/decisions/`. Takes 2 minutes. 
 ## File System Layout
 
 ```
-ScholarSync/
+your-project/
 ├── .claude/
 │   ├── commands/                    # Explicitly invoked via /command-name
 │   │   ├── capture-planning.md      # NEW — save planning session decisions

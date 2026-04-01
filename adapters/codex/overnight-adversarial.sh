@@ -57,7 +57,7 @@ capture_score() {
   local fail_count=0
   local total=0
 
-  # Run typecheck (ScholarSync uses npx tsc directly, no npm script)
+  # Run typecheck (uses npx tsc directly if no npm typecheck script exists)
   if npx tsc --noEmit 2>/dev/null; then
     typecheck_pass=1
   fi

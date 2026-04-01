@@ -32,7 +32,7 @@ BEFORE claiming any status or expressing satisfaction:
 Skip any step = lying, not verifying
 ```
 
-## ScholarSync Verification Commands
+## Project Verification Commands
 
 | Claim | Required Command | Pass Criteria |
 |-------|-----------------|---------------|

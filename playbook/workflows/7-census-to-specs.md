@@ -8,7 +8,7 @@ Module: $ARGUMENTS (module name — must have a `feature-census/<module>/CENSUS.
 
 The Feature Census tells you WHAT the module can do. This command converts that into HOW to test each capability. The output format is structured markdown that can be mechanically converted into Playwright tests — no interpretation needed.
 
-Adapted from ScholarSync's spec format (376 specs, 12,804 checkpoints across 20 modules) — proven at scale.
+Adapted from a production spec format (hundreds of specs, thousands of checkpoints across multiple modules) — proven at scale.
 
 ## Process
 

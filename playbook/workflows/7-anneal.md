@@ -9,7 +9,7 @@ Module: $ARGUMENTS (module name, or "all")
 After spec-runner identifies failures, you have a list of broken checkpoints. This command enters a loop: read a failure → diagnose it → fix the code → re-run the test → verify it passes → move to the next failure. The loop continues until all checkpoints pass or the maximum iterations are reached.
 
 Adapted from:
-- ScholarSync's program.md self-annealing system (quality score went from 47 → 99.71 over multiple sessions)
+- a production self-annealing system (quality score improved from 47 → 99.71 over multiple sessions)
 - Geoffrey Huntley's Ralph methodology ("sit ON the loop, not IN it")
 - Jesse Vincent's verification-before-completion ("evidence before claims")
 
@@ -249,7 +249,7 @@ git commit -m "anneal(<module>): <fixed>/<total> checkpoints passing — <N> fix
 
 ## Self-Annealing Quality Gate (Optional)
 
-If the project has a quality scorer (like ScholarSync's `quality-score.mjs`), run it as a gate:
+If the project has a quality scorer (like a `quality-score.mjs`), run it as a gate:
 
 ```bash
 # Check if a quality scorer exists

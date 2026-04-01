@@ -10,7 +10,7 @@ Previously, feature docs were written AFTER the app was built by asking LLMs to 
 
 Adapted from:
 - shinpr's recipe-reverse-engineer — scope discovery → generation → code verification → review → revision loop (max 2 cycles)
-- ScholarSync's existing `/doc-feature` command — AST extractor produces machine-verified feature lists with exact file:line references
+- an existing `/doc-feature` command — AST extractor produces machine-verified feature lists with exact file:line references
 
 ## Process
 
@@ -75,7 +75,7 @@ Flag discrepancies:
 
 Create or update `${ARGUMENTS.toUpperCase()}_FEATURES_TESTING.md` in the repo root.
 
-Structure (matching existing ScholarSync feature doc format):
+Structure (matching the existing feature doc format):
 
 ```markdown
 # [Module Name] — Feature Testing Document
@@ -157,4 +157,4 @@ Report:
 - **NEVER write features without file references** unless explicitly marking them as "unverified"
 - **DO cross-reference both sources** — GSD plans tell you intent, code tells you reality. Both are needed.
 - **Max 2 revision cycles** — if the doc still has low consistency after 2 attempts, flag for human review (don't loop forever)
-- Follow existing ScholarSync feature doc format (checkboxes, categories, file:line references) for consistency with the 20 existing docs
+- Follow the existing feature doc format (checkboxes, categories, file:line references) for consistency with existing docs
