@@ -7,6 +7,15 @@ ITERATIONS=${1:-20}
 MODEL=${2:-openai/glm-5}
 BRANCH="overnight/$(date +%Y-%m-%d)"
 
+# Portable in-place sed (works on macOS and Linux)
+portable_sed_i() {
+  if [ "$(uname)" = "Darwin" ]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 echo "Starting overnight build: $ITERATIONS iterations with $MODEL"
 echo "Branch: $BRANCH"
 
@@ -58,7 +67,7 @@ Run any available test commands to verify your work." \
     # Check the box by line number
     REQ_LINE=$(echo "$NEXT" | cut -d: -f1)
     if [ -n "$REQ_LINE" ]; then
-      sed -i '' "${REQ_LINE}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
+      portable_sed_i "${REQ_LINE}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
     fi
     git add -A
     git commit -m "feat: $(echo "$NEXT" | cut -d: -f2- | head -c 60) (overnight)" 2>/dev/null || true

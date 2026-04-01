@@ -239,7 +239,7 @@ convert_requirements_to_json() {
   if [ ! -f ".planning/requirements.json" ] && [ -f ".planning/REQUIREMENTS.md" ]; then
     echo -e "${YELLOW}Converting REQUIREMENTS.md to requirements.json...${NC}"
     python3 -c "
-import re, json, os
+import re, json
 with open('.planning/REQUIREMENTS.md') as f:
     lines = f.readlines()
 reqs = []
@@ -285,21 +285,12 @@ for line in lines:
 phases_found = set(r['phase'] for r in reqs)
 if len(phases_found) == 1 and len(reqs) > 5:
     print(f'WARNING: All {len(reqs)} requirements assigned to Phase {list(phases_found)[0]}.')
-    print('Phase detection may have failed. Check ROADMAP.md for phase structure.')
-    # Try to read ROADMAP.md for phase mapping
-    roadmap_path = '.planning/ROADMAP.md'
-    if os.path.exists(roadmap_path):
-        with open(roadmap_path) as rf:
-            roadmap = rf.read()
-        # Extract phase titles from roadmap
-        roadmap_phases = re.findall(r'Phase\s+(\d+)[:\s]+(.+)', roadmap)
-        if roadmap_phases:
-            print(f'Found {len(roadmap_phases)} phases in ROADMAP.md. Attempting to map requirements to phases.')
-            # Simple heuristic: distribute requirements evenly across phases
-            per_phase = max(1, len(reqs) // len(roadmap_phases))
-            for idx, r in enumerate(reqs):
-                r['phase'] = min(idx // per_phase + 1, len(roadmap_phases))
-            print(f'Distributed requirements across {len(roadmap_phases)} phases.')
+    print('Phase detection could not find explicit phase markers in REQUIREMENTS.md.')
+    print('Phase gates will be DISABLED for this run (all requirements treated as same phase).')
+    print('To enable phase gates, add explicit \"### Phase N\" headings to REQUIREMENTS.md')
+    print('or ensure ROADMAP.md phases match requirement sections.')
+    # DO NOT redistribute — keep all in phase 1, which effectively disables phase gates
+    # This is safer than guessing wrong phase assignments
 
 with open('.planning/requirements.json', 'w') as f:
     json.dump({'requirements': reqs}, f, indent=2)

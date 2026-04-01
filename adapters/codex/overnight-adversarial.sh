@@ -25,6 +25,15 @@ set -uo pipefail
 # Note: NOT using set -e because codex exec may return non-zero
 # exit codes even on successful completion. We handle errors manually.
 
+# Portable in-place sed (works on macOS and Linux)
+portable_sed_i() {
+  if [ "$(uname)" = "Darwin" ]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 ITERATIONS=${1:-20}
 BRANCH="codex/$(date +%Y-%m-%d)"
 MAX_HEAL_ATTEMPTS=3
@@ -492,7 +501,7 @@ Fix the bugs. Do not delete or modify the adversary's tests." \
   echo -e "${GREEN}[COMMIT] Score held or improved. Committing.${NC}"
 
   # Check the requirement box by line number (avoids regex issues with special chars)
-  sed -i '' "${REQ_LINE_NUM}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
+  portable_sed_i "${REQ_LINE_NUM}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
 
   # Only stage files changed/created in THIS iteration (not pre-existing untracked files)
   CHANGED_FILES=$(git diff --name-only 2>/dev/null)
