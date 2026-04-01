@@ -62,7 +62,7 @@ If AFTER_PASS < BEFORE_PASS:
 - Attempt 1: fix the obvious bug
 - Attempt 2: smaller fix, only touch lines that caused failure
 - Attempt 3: minimal change, revert if can't fix
-- If still below BEFORE_PASS after 3 attempts: revert ALL changes with `git checkout -- .`
+- If still below BEFORE_PASS after 3 attempts: REVERT only files changed in this iteration: `git diff --name-only | xargs git checkout --` and remove new files created this iteration
 - Log: "REVERTED: [requirement] — score dropped and could not heal"
 - Continue to next iteration
 

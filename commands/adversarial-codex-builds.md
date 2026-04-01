@@ -77,7 +77,7 @@ Run `npx tsc --noEmit && npm test`. Count passing tests as AFTER_PASS.
 
 If AFTER_PASS < BEFORE_PASS:
 - Score dropped. Send Codex a heal request (up to 3 attempts, each more conservative).
-- If still below BEFORE_PASS after 3 attempts: revert ALL changes with `git checkout -- .`
+- If still below BEFORE_PASS after 3 attempts: REVERT only files changed in this iteration: `git diff --name-only | xargs git checkout --` and remove new files created this iteration
 - Log: "REVERTED: [requirement] — score dropped and could not heal"
 - Continue to next iteration
 

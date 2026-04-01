@@ -236,12 +236,12 @@ If the requirement is too big, build the smallest meaningful slice." \
 
   echo "[BUILDER] Finished building: $REQ_TEXT" >> "$PROGRESS_FILE"
 
-  # ─── Check if Codex actually produced changes (Bug 3: detect errors/rate limits)
-  if [ -z "$(git diff --name-only 2>/dev/null)" ]; then
-    echo -e "${RED}[BUILDER] No code changes detected. Codex may have errored. Skipping.${NC}"
+  # ─── Check if Codex actually produced changes (tracked diffs OR new files)
+  ITER_NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_START_UNTRACKED") - 2>/dev/null)
+  if [ -z "$(git diff --name-only 2>/dev/null)" ] && [ -z "$ITER_NEW_FILES" ]; then
+    echo -e "${RED}[BUILDER] No code changes detected (no tracked diffs, no new files). Codex may have errored. Skipping.${NC}"
     echo "[$i] SKIPPED: No code changes from builder" >> "$PROGRESS_FILE"
 
-    # Check if this is 3rd consecutive skip — if so, likely rate limited
     CONSECUTIVE_SKIPS=$((CONSECUTIVE_SKIPS + 1))
     if [ "$CONSECUTIVE_SKIPS" -ge 3 ]; then
       echo -e "${RED}3 consecutive empty iterations. Codex likely rate-limited. STOPPING.${NC}"
@@ -280,8 +280,14 @@ Run: npx tsc --noEmit" \
     if ! npx tsc --noEmit 2>/dev/null; then
       echo -e "${RED}[TYPECHECK] Still failing after fix attempt. REVERTING.${NC}"
       CHANGED_FILES=$(git diff --name-only 2>/dev/null)
-      echo "$CHANGED_FILES" | xargs git checkout -- 2>/dev/null || true
-      git clean -fd -- $(echo "$CHANGED_FILES" | head -20) 2>/dev/null || true
+      if [ -n "$CHANGED_FILES" ]; then
+        echo "$CHANGED_FILES" | xargs git checkout -- 2>/dev/null || true
+      fi
+      # Remove new untracked files created this iteration
+      ITER_NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_START_UNTRACKED") - 2>/dev/null)
+      if [ -n "$ITER_NEW_FILES" ]; then
+        echo "$ITER_NEW_FILES" | xargs rm -f 2>/dev/null || true
+      fi
       echo "[$i] REVERTED: $REQ_TEXT — TypeScript compilation failed" >> "$PROGRESS_FILE"
       log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$AFTER_BUILD_PASS" "$AFTER_BUILD_FAIL" "REVERTED_TYPECHECK"
       continue
@@ -336,8 +342,11 @@ Fix ONLY what's broken. Do NOT add new features. Do NOT refactor." \
       CHANGED_FILES=$(git diff --name-only 2>/dev/null)
       if [ -n "$CHANGED_FILES" ]; then
         echo "$CHANGED_FILES" | xargs git checkout -- 2>/dev/null || true
-        # Also remove any new untracked files from this iteration
-        git clean -fd -- $(echo "$CHANGED_FILES" | head -20) 2>/dev/null || true
+      fi
+      # Remove new untracked files created this iteration
+      ITER_NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_START_UNTRACKED") - 2>/dev/null)
+      if [ -n "$ITER_NEW_FILES" ]; then
+        echo "$ITER_NEW_FILES" | xargs rm -f 2>/dev/null || true
       fi
       echo "[$i] REVERTED: $REQ_TEXT — score dropped and could not heal" >> "$PROGRESS_FILE"
       log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$BEFORE_PASS" "0" "REVERTED"

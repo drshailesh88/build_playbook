@@ -34,18 +34,24 @@ for ((i=1; i<=$ITERATIONS; i++)); do
         --auto-commits \
         --message "Read .planning/REQUIREMENTS.md. Find this unchecked requirement: $NEXT
 Build ONLY this one requirement. Write code and tests.
-After building, check the box in REQUIREMENTS.md by changing [ ] to [x].
+Do NOT check the box in REQUIREMENTS.md — the script handles that after verification.
 Run any available test commands to verify your work." \
         --yes 2>&1 | tee -a progress.txt
 
   # Log progress
   echo "[$i] $(date): Worked on: $NEXT" >> progress.txt
 
-  # Check if tests pass
+  # Gate: only mark complete if tests pass
   if npm test 2>/dev/null; then
-    echo "[$i] Tests passed" >> progress.txt
+    echo "[$i] Tests PASSED — marking requirement complete" >> progress.txt
+    # Check the box by line number
+    REQ_LINE=$(echo "$NEXT" | cut -d: -f1)
+    if [ -n "$REQ_LINE" ]; then
+      sed -i '' "${REQ_LINE}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
+    fi
   else
-    echo "[$i] Tests failed — may need review" >> progress.txt
+    echo "[$i] Tests FAILED — reverting changes" >> progress.txt
+    git checkout -- . 2>/dev/null || true
   fi
 done
 
