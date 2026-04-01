@@ -119,20 +119,27 @@ Fix the bugs. Do not delete or modify the adversary's tests."
 
 #### 1h. Final Score Check (Autoresearch — the iron law)
 
-Run `npm test`. Count passing as FINAL_PASS.
+Run `npx tsc --noEmit` AND `npm test`. Count passing as FINAL_PASS, failing as FINAL_FAIL.
 
-If FINAL_PASS < BEFORE_PASS:
-- Score STILL below baseline. REVERT all changes: `git checkout -- .`
-- Log: "REVERTED: [requirement] — final score below baseline"
+ALL THREE must be true to commit:
+1. TypeScript compiles cleanly (`npx tsc --noEmit` exits 0)
+2. Pass count did not drop (FINAL_PASS >= BEFORE_PASS)
+3. Zero failing tests (FINAL_FAIL == 0)
+
+If ANY gate fails:
+- REVERT only the files changed in this iteration (NOT `git checkout -- .` which destroys unrelated work)
+- Use: `git diff --name-only | xargs git checkout --`
+- Log: "REVERTED: [requirement] — [which gate failed]"
 - Continue to next iteration
 
-If FINAL_PASS >= BEFORE_PASS:
-- Score held or improved. COMMIT.
+If ALL gates pass:
+- COMMIT.
 
 #### 1i. Commit
 
 - Edit `.planning/REQUIREMENTS.md` — change `- [ ]` to `- [x]` for this requirement
-- `git add -A`
+- Stage only files you changed (NOT `git add -A` which commits unrelated dirty files)
+- Use: `git diff --name-only | xargs git add` then `git add .planning/REQUIREMENTS.md`
 - Commit with message: `feat: [requirement summary] (Phase N) — score: BEFORE→FINAL (+delta)`
 - Log: "COMMITTED: [requirement] | Score: BEFORE → FINAL"
 
