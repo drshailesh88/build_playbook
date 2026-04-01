@@ -62,9 +62,29 @@ Run any available test commands to verify your work." \
   # Log progress
   echo "[$i] $(date): Worked on: $NEXT" >> progress.txt
 
-  # Gate: only commit and mark complete if tests pass
-  if npm test 2>/dev/null; then
-    echo "[$i] Tests PASSED — committing and marking requirement complete" >> progress.txt
+  # Full verification matching AGENTS.md contract
+  VERIFY_PASS=true
+
+  # Typecheck
+  if ! npx tsc --noEmit 2>/dev/null; then
+    echo "[$i] TYPECHECK FAILED" >> progress.txt
+    VERIFY_PASS=false
+  fi
+
+  # Tests
+  if ! npm test 2>/dev/null; then
+    echo "[$i] TESTS FAILED" >> progress.txt
+    VERIFY_PASS=false
+  fi
+
+  # Lint (if available)
+  if ! npm run lint --if-present 2>/dev/null; then
+    echo "[$i] LINT FAILED" >> progress.txt
+    VERIFY_PASS=false
+  fi
+
+  if [ "$VERIFY_PASS" = true ]; then
+    echo "[$i] ALL CHECKS PASSED — committing and marking complete" >> progress.txt
     # Check the box by line number
     REQ_LINE=$(echo "$NEXT" | cut -d: -f1)
     if [ -n "$REQ_LINE" ]; then
@@ -78,7 +98,7 @@ Run any available test commands to verify your work." \
     git add .planning/REQUIREMENTS.md progress.txt 2>/dev/null || true
     git commit -m "feat: $(echo "$NEXT" | cut -d: -f2- | head -c 60) (overnight)" 2>/dev/null || true
   else
-    echo "[$i] Tests FAILED — reverting uncommitted changes from this iteration" >> progress.txt
+    echo "[$i] VERIFICATION FAILED — reverting" >> progress.txt
     # Only clean files created in this iteration (not pre-existing untracked files)
     ITER_NEW=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_UNTRACKED") - 2>/dev/null)
     if [ -n "$ITER_NEW" ]; then

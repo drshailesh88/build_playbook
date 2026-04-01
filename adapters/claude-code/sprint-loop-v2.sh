@@ -230,6 +230,8 @@ while true; do
   # builds up to 5 requirements, then exits.
   # Next iteration starts with ZERO context.
 
+  SESSION_START_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+
   run_claude_session
 
   # ─── Post-session check ─────────────────────────────────────────────────
@@ -239,26 +241,35 @@ while true; do
   REMAINING=$(get_remaining)
   STUCK_COUNT=$(get_stuck_count)
 
+  # Also check for other signs of progress (new commits)
+  NEW_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+  SESSION_HAD_COMMITS=false
+  if [ -n "$NEW_HEAD" ] && [ "$NEW_HEAD" != "$SESSION_START_HEAD" ]; then
+    SESSION_HAD_COMMITS=true
+  fi
+
   echo ""
   echo -e "Session $SESSION complete: ${GREEN}+$BUILT_THIS_SESSION requirements${NC} this session"
-  notify "Session $SESSION ended — built $BUILT_THIS_SESSION, total done: $DONE, remaining: $REMAINING"
+  if [ "$SESSION_HAD_COMMITS" = true ]; then
+    echo -e "  (new commits detected — work in progress)"
+  fi
+  echo "$(date): Session $SESSION ended — built $BUILT_THIS_SESSION, commits: $SESSION_HAD_COMMITS, total done: $DONE" >> "$LOOP_LOG"
+  notify "Session $SESSION ended — built $BUILT_THIS_SESSION, commits: $SESSION_HAD_COMMITS, total done: $DONE, remaining: $REMAINING"
 
   write_status "$SESSION" "$DONE" "$REMAINING" "$STUCK_COUNT" "$CONSECUTIVE_EMPTY" "$BUILT_THIS_SESSION" "RUNNING"
 
-  # If session built nothing, something might be wrong
-  if [ "$BUILT_THIS_SESSION" -eq 0 ]; then
-    echo -e "${YELLOW}Warning: No requirements completed this session.${NC}"
-    echo -e "Checking if Claude is stuck..."
-
+  # Only count as empty if BOTH no checkboxes AND no new commits
+  if [ "$BUILT_THIS_SESSION" -eq 0 ] && [ "$SESSION_HAD_COMMITS" = false ]; then
+    echo -e "${YELLOW}Warning: No requirements completed and no commits this session.${NC}"
     CONSECUTIVE_EMPTY=$((CONSECUTIVE_EMPTY + 1))
     if [ "$CONSECUTIVE_EMPTY" -ge 2 ]; then
-      echo -e "${RED}2 consecutive empty sessions. Stopping.${NC}"
+      echo -e "${RED}2 consecutive truly empty sessions. Stopping.${NC}"
       write_status "$SESSION" "$DONE" "$REMAINING" "$STUCK_COUNT" "$CONSECUTIVE_EMPTY" 0 "EMPTY_SESSIONS"
       notify "STOPPED — 2 consecutive empty sessions (done: $DONE, remaining: $REMAINING)"
       break
     fi
 
-    notify "WARNING — Empty session $CONSECUTIVE_EMPTY/2 (no requirements completed)"
+    notify "WARNING — Empty session $CONSECUTIVE_EMPTY/2 (no requirements completed, no commits)"
   else
     CONSECUTIVE_EMPTY=0
   fi

@@ -306,6 +306,7 @@ print(f'Converted {len(reqs)} requirements')
 }
 
 get_next_requirement() {
+  local current_phase=$(get_current_phase)
   python3 -c "
 import json, sys
 with open('.planning/requirements.json') as f:
@@ -318,15 +319,29 @@ if 'text' not in sample or ('done' not in sample and 'status' not in sample):
     print(f\"ERROR: requirements.json has unexpected schema. Expected 'text' + 'done' or 'status'. Got: {list(sample.keys())}\", file=sys.stderr)
     sys.exit(1)
 for r in data['requirements']:
-    # Support both schema formats
     is_done = r.get('done', False) or r.get('status', '') == 'done'
     is_stuck = r.get('stuck', False) or r.get('status', '') == 'stuck'
-    if not is_done and not is_stuck:
-        print(f\"{r['id']}|{r.get('phase', 1)}|{r['text']}\")
+    req_phase = r.get('phase', 1)
+    if not is_done and not is_stuck and req_phase == $current_phase:
+        print(f\"{r['id']}|{req_phase}|{r['text']}\")
         break
 else:
-    pass  # No requirement found — print nothing
-" 2>/dev/null || echo ""
+    # No requirements in current phase — check if phase is complete
+    # or if all phases are done
+    all_done = all(
+        r.get('done', False) or r.get('status', '') == 'done' or
+        r.get('stuck', False) or r.get('status', '') == 'stuck'
+        for r in data['requirements'] if r.get('phase', 1) == $current_phase
+    )
+    if all_done:
+        # Current phase complete, check next phases
+        for r in data['requirements']:
+            is_done = r.get('done', False) or r.get('status', '') == 'done'
+            is_stuck = r.get('stuck', False) or r.get('status', '') == 'stuck'
+            if not is_done and not is_stuck:
+                print(f\"{r['id']}|{r.get('phase', 1)}|{r['text']}\")
+                break
+" 2>/dev/null
 }
 
 mark_requirement_done() {
@@ -858,8 +873,23 @@ Fix ONLY what's broken. Do NOT add new features. Do NOT refactor."
   for ((adv_round=1; adv_round<=$MAX_ADVERSARY_ROUNDS; adv_round++)); do
     echo -e "${RED}[ADVERSARY] Round $adv_round/$MAX_ADVERSARY_ROUNDS${NC}"
 
-    # Get the diff of what was built
-    DIFF=$(git diff --no-color 2>/dev/null | head -500)
+    # Get the full diff for review (not truncated)
+    DIFF=$(git diff --no-color 2>/dev/null)
+    DIFF_LINES=$(echo "$DIFF" | wc -l | tr -d ' ')
+
+    if [ "$DIFF_LINES" -gt 1000 ]; then
+      echo -e "${YELLOW}[REVIEW] Large diff: $DIFF_LINES lines. Review may take longer.${NC}"
+    fi
+
+    if [ "$DIFF_LINES" -gt 2000 ]; then
+      # For very large diffs, provide file-level summary + full diff of key files
+      DIFF_SUMMARY=$(git diff --stat --no-color 2>/dev/null)
+      DIFF="DIFF SUMMARY (${DIFF_LINES} lines total — showing changed files and key hunks):
+${DIFF_SUMMARY}
+
+Full diff of source files (excluding tests, configs, generated):
+$(git diff --no-color -- '*.ts' '*.tsx' '*.js' '*.jsx' ':!*.test.*' ':!*.spec.*' 2>/dev/null)"
+    fi
 
     run_codex_with_retry \
       "You are the ADVERSARY agent. Your job is to BREAK the code that was just written.
@@ -933,7 +963,22 @@ Fix the bugs. Do not delete or modify the adversary's tests."
   echo -e "${BLUE}[ARCHITECT] Reviewing code quality and patterns...${NC}"
   update_status "$i" "$ITERATIONS" "$REQ_ID" "$REQ_PHASE" "ARCHITECT_REVIEW" "$BASELINE_PASS" "$AFTER_BUILD_PASS" "" false
 
-  DIFF_FOR_ARCHITECT=$(git diff --no-color 2>/dev/null | head -500)
+  DIFF_FOR_ARCHITECT=$(git diff --no-color 2>/dev/null)
+  DIFF_FOR_ARCHITECT_LINES=$(echo "$DIFF_FOR_ARCHITECT" | wc -l | tr -d ' ')
+
+  if [ "$DIFF_FOR_ARCHITECT_LINES" -gt 1000 ]; then
+    echo -e "${YELLOW}[REVIEW] Large diff: $DIFF_FOR_ARCHITECT_LINES lines. Review may take longer.${NC}"
+  fi
+
+  if [ "$DIFF_FOR_ARCHITECT_LINES" -gt 2000 ]; then
+    # For very large diffs, provide file-level summary + full diff of key files
+    DIFF_ARCH_SUMMARY=$(git diff --stat --no-color 2>/dev/null)
+    DIFF_FOR_ARCHITECT="DIFF SUMMARY (${DIFF_FOR_ARCHITECT_LINES} lines total — showing changed files and key hunks):
+${DIFF_ARCH_SUMMARY}
+
+Full diff of source files (excluding tests, configs, generated):
+$(git diff --no-color -- '*.ts' '*.tsx' '*.js' '*.jsx' ':!*.test.*' ':!*.spec.*' 2>/dev/null)"
+  fi
 
   ARCHITECT_OUTPUT=$(run_codex_with_retry \
     "You are the ARCHITECT reviewer. The code below was built and survived adversarial testing.
