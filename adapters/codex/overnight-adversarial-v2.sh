@@ -366,8 +366,6 @@ with open('.planning/requirements.json', 'w') as f:
 }
 
 sync_json_to_markdown() {
-  # Sync requirements.json state back to REQUIREMENTS.md so V1 tools stay in sync
-  # Uses stored markdown_line numbers for exact targeting — no truncation or prefix matching
   python3 -c "
 import json
 with open('.planning/requirements.json') as f:
@@ -377,10 +375,15 @@ with open('.planning/REQUIREMENTS.md') as f:
 for r in data['requirements']:
     line_num = r.get('markdown_line')
     if line_num and line_num <= len(lines):
-        idx = line_num - 1  # 0-indexed
+        idx = line_num - 1
         line = lines[idx]
         if r.get('done', False) or r.get('status', '') == 'done':
             lines[idx] = line.replace('- [ ]', '- [x]', 1)
+        elif r.get('stuck', False) or r.get('status', '') == 'stuck':
+            # Mark stuck in markdown with a comment
+            if '<!-- STUCK' not in line and '<!-- BLOCKED' not in line:
+                error = r.get('last_error', 'unknown reason')
+                lines[idx] = line.rstrip() + ' <!-- STUCK: ' + str(error)[:80] + ' -->\n'
 with open('.planning/REQUIREMENTS.md', 'w') as f:
     f.writelines(lines)
 " 2>/dev/null || true
@@ -486,17 +489,7 @@ echo -e "Max heal attempts per requirement: $MAX_HEAL_ATTEMPTS"
 echo -e "Max adversary rounds per requirement: $MAX_ADVERSARY_ROUNDS"
 echo ""
 
-git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH" 2>/dev/null
-
-# Verify we're on the correct branch
-CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
-if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
-  echo -e "${RED}FATAL: Failed to switch to branch '$BRANCH'. Currently on '$CURRENT_BRANCH'.${NC}"
-  echo -e "${RED}Cannot proceed — overnight changes would land on the wrong branch.${NC}"
-  exit 1
-fi
-
-# ─── SAFETY: Require clean working tree ──────────────────────────────────────
+# ─── SAFETY: Require clean working tree (BEFORE branch switch) ───────────────
 DIRTY_FILES=$(git status --porcelain 2>/dev/null | grep -v "^??" | wc -l | tr -d ' ')
 if [ "$DIRTY_FILES" -gt 0 ]; then
   echo -e "${RED}Working tree has $DIRTY_FILES uncommitted changes.${NC}"
@@ -504,6 +497,16 @@ if [ "$DIRTY_FILES" -gt 0 ]; then
   echo -e "${RED}to avoid committing unrelated files or destroying local work on revert.${NC}"
   echo ""
   echo -e "Run: ${YELLOW}git stash${NC} or ${YELLOW}git add -A && git commit -m 'wip: save before overnight run'${NC}"
+  exit 1
+fi
+
+git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH" 2>/dev/null
+
+# Verify we're on the correct branch
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
+  echo -e "${RED}FATAL: Failed to switch to branch '$BRANCH'. Currently on '$CURRENT_BRANCH'.${NC}"
+  echo -e "${RED}Cannot proceed — overnight changes would land on the wrong branch.${NC}"
   exit 1
 fi
 
@@ -535,6 +538,8 @@ notify "Overnight adversarial build V2 started. Baseline: $BASELINE_PASS passing
 PREV_PHASE=$(get_current_phase)
 PHASE_START_PASS=$BASELINE_PASS
 LAST_REQ_ID=""
+REPEAT_COUNT=0
+LAST_COMMIT_HEAD=""
 CONSECUTIVE_SKIPS=0
 MAIN_DIR=$(pwd)
 
@@ -593,16 +598,34 @@ for ((i=1; i<=$ITERATIONS; i++)); do
     echo ""
   fi
 
-  # ─── V2: Deduplication via requirement ID (more reliable than text compare)
+  # ─── Deduplication: detect stuck loop vs legitimate partial work ────────
   if [ "$REQ_ID" = "$LAST_REQ_ID" ]; then
-    echo -e "${RED}STUCK: Same requirement $REQ_ID as last iteration. Marking stuck.${NC}"
-    mark_requirement_stuck "$REQ_ID" "Same requirement repeated - marking/update failed"
-    sync_json_to_markdown
-    notify "STUCK on $REQ_ID: Same requirement repeated. Marked stuck, moving on."
-    LAST_REQ_ID=""
-    continue
+    REPEAT_COUNT=$((REPEAT_COUNT + 1))
+
+    # Check if there was actual progress (new commits) since last attempt
+    CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null)
+    if [ "$CURRENT_HEAD" != "$LAST_COMMIT_HEAD" ]; then
+      # Progress was made — this is legitimate partial work, reset counter
+      echo -e "${YELLOW}Same requirement, but progress was made. Continuing partial work.${NC}"
+      REPEAT_COUNT=1
+    fi
+
+    if [ "$REPEAT_COUNT" -ge 3 ]; then
+      echo -e "${RED}STUCK: Same requirement 3 times with no progress. Marking stuck.${NC}"
+      mark_requirement_stuck "$REQ_ID" "3 consecutive attempts with no forward progress"
+      sync_json_to_markdown
+      echo "[$i] STUCK: $REQ_TEXT — 3 attempts, no progress" >> "$PROGRESS_FILE"
+      LAST_REQ_ID=""
+      REPEAT_COUNT=0
+      continue
+    else
+      echo -e "${YELLOW}Requirement repeated ($REPEAT_COUNT/3). Continuing — may be partial work.${NC}"
+    fi
+  else
+    REPEAT_COUNT=0
   fi
   LAST_REQ_ID="$REQ_ID"
+  LAST_COMMIT_HEAD=$(git rev-parse HEAD 2>/dev/null)
 
   echo -e "${BLUE}=== Iteration $i/$ITERATIONS | Phase $REQ_PHASE | $REQ_ID ===${NC}"
   echo -e "Requirement: $REQ_TEXT"
