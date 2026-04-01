@@ -116,6 +116,17 @@ echo ""
 
 git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 
+# ─── SAFETY: Require clean working tree ──────────────────────────────────────
+DIRTY_FILES=$(git status --porcelain 2>/dev/null | grep -v "^??" | wc -l | tr -d ' ')
+if [ "$DIRTY_FILES" -gt 0 ]; then
+  echo -e "${RED}Working tree has $DIRTY_FILES uncommitted changes.${NC}"
+  echo -e "${RED}Commit or stash them first. This script must start from a clean tree${NC}"
+  echo -e "${RED}to avoid committing unrelated files or destroying local work on revert.${NC}"
+  echo ""
+  echo -e "Run: ${YELLOW}git stash${NC} or ${YELLOW}git add -A && git commit -m 'wip: save before overnight run'${NC}"
+  exit 1
+fi
+
 # ─── Capture baseline score (autoresearch: know where you started) ───────────
 echo -e "${YELLOW}Capturing baseline score...${NC}"
 BASELINE=$(capture_score)
@@ -237,10 +248,39 @@ If the requirement is too big, build the smallest meaningful slice." \
   echo -e "${YELLOW}[TEST] Running test suite...${NC}"
 
   AFTER_BUILD=$(capture_score)
+  AFTER_BUILD_TC=$(echo "$AFTER_BUILD" | cut -d: -f1)
   AFTER_BUILD_PASS=$(echo "$AFTER_BUILD" | cut -d: -f2)
   AFTER_BUILD_FAIL=$(echo "$AFTER_BUILD" | cut -d: -f3)
 
-  echo -e "Before: ${GREEN}$BEFORE_PASS passing${NC} | After build: ${GREEN}$AFTER_BUILD_PASS passing${NC}, ${RED}$AFTER_BUILD_FAIL failing${NC}"
+  echo -e "Before: ${GREEN}$BEFORE_PASS passing${NC} | After build: ${GREEN}$AFTER_BUILD_PASS passing${NC}, ${RED}$AFTER_BUILD_FAIL failing${NC}, TypeCheck: $([ "$AFTER_BUILD_TC" = "1" ] && echo "${GREEN}PASS${NC}" || echo "${RED}FAIL${NC}")"
+
+  # ─── TYPECHECK GATE: TypeScript errors block everything ──────────────────
+  if [ "$AFTER_BUILD_TC" != "1" ]; then
+    echo -e "${RED}[TYPECHECK] TypeScript compilation failed. Cannot proceed.${NC}"
+    echo -e "${YELLOW}[ANNEAL] Attempting to fix type errors...${NC}"
+
+    codex exec --full-auto \
+      "TypeScript compilation is failing (npx tsc --noEmit returns errors).
+Fix ALL type errors. Do not change any logic — only fix types.
+Run: npx tsc --noEmit" \
+      || true
+
+    # Re-check typecheck
+    if ! npx tsc --noEmit 2>/dev/null; then
+      echo -e "${RED}[TYPECHECK] Still failing after fix attempt. REVERTING.${NC}"
+      CHANGED_FILES=$(git diff --name-only 2>/dev/null)
+      echo "$CHANGED_FILES" | xargs git checkout -- 2>/dev/null || true
+      git clean -fd -- $(echo "$CHANGED_FILES" | head -20) 2>/dev/null || true
+      echo "[$i] REVERTED: $REQ_TEXT — TypeScript compilation failed" >> "$PROGRESS_FILE"
+      log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$AFTER_BUILD_PASS" "$AFTER_BUILD_FAIL" "REVERTED_TYPECHECK"
+      continue
+    fi
+
+    # Re-capture score after type fix
+    AFTER_BUILD=$(capture_score)
+    AFTER_BUILD_PASS=$(echo "$AFTER_BUILD" | cut -d: -f2)
+    AFTER_BUILD_FAIL=$(echo "$AFTER_BUILD" | cut -d: -f3)
+  fi
 
   # ─── AUTORESEARCH CHECK: Did score go down? ──────────────────────────────
   if [ "$AFTER_BUILD_PASS" -lt "$BEFORE_PASS" ]; then
@@ -281,7 +321,13 @@ Fix ONLY what's broken. Do NOT add new features. Do NOT refactor." \
 
     if [ "$HEALED" = false ]; then
       echo -e "${RED}[ANNEAL] Could not heal after $MAX_HEAL_ATTEMPTS attempts. REVERTING.${NC}"
-      git checkout -- .
+      # Only revert files changed in this iteration, not the entire tree
+      CHANGED_FILES=$(git diff --name-only 2>/dev/null)
+      if [ -n "$CHANGED_FILES" ]; then
+        echo "$CHANGED_FILES" | xargs git checkout -- 2>/dev/null || true
+        # Also remove any new untracked files from this iteration
+        git clean -fd -- $(echo "$CHANGED_FILES" | head -20) 2>/dev/null || true
+      fi
       echo "[$i] REVERTED: $REQ_TEXT — score dropped and could not heal" >> "$PROGRESS_FILE"
       log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$BEFORE_PASS" "0" "REVERTED"
       continue
@@ -331,10 +377,12 @@ If you genuinely cannot find any bugs, say 'NO BUGS FOUND' and stop." \
 
     echo -e "After adversary: ${GREEN}$ADV_PASS passing${NC}, ${RED}$ADV_FAIL failing${NC}"
 
-    if [ "$ADV_FAIL" -eq 0 ] || [ "$ADV_PASS" -ge "$AFTER_BUILD_PASS" ]; then
-      echo -e "${GREEN}[ADVERSARY] Code survived the attack.${NC}"
+    if [ "$ADV_FAIL" -eq 0 ]; then
+      echo -e "${GREEN}[ADVERSARY] Code survived the attack. Zero failures.${NC}"
       break
     fi
+
+    echo -e "${YELLOW}[ADVERSARY] Found $ADV_FAIL failing tests. Builder must fix.${NC}"
 
     # ─── Adversary found bugs. Builder must fix them. ────────────────────
     echo -e "${YELLOW}[BUILDER] Fixing adversary-found bugs...${NC}"
@@ -369,15 +417,29 @@ Fix the bugs. Do not delete or modify the adversary's tests." \
   # FINAL AUTORESEARCH CHECK: Is the score better than or equal to before?
   # =========================================================================
   FINAL=$(capture_score)
+  FINAL_TC=$(echo "$FINAL" | cut -d: -f1)
   FINAL_PASS=$(echo "$FINAL" | cut -d: -f2)
   FINAL_FAIL=$(echo "$FINAL" | cut -d: -f3)
 
   echo ""
-  echo -e "FINAL SCORE: Before=$BEFORE_PASS | After=${FINAL_PASS} passing, ${FINAL_FAIL} failing"
+  echo -e "FINAL SCORE: Before=$BEFORE_PASS | After=${FINAL_PASS} passing, ${FINAL_FAIL} failing, TypeCheck: $([ "$FINAL_TC" = "1" ] && echo "PASS" || echo "FAIL")"
 
-  if [ "$FINAL_PASS" -lt "$BEFORE_PASS" ]; then
-    echo -e "${RED}[AUTORESEARCH] Score STILL below baseline. REVERTING all changes.${NC}"
-    git checkout -- .
+  # Gate on: typecheck must pass AND pass count must not drop AND zero failures from adversary
+  if [ "$FINAL_TC" != "1" ] || [ "$FINAL_PASS" -lt "$BEFORE_PASS" ] || [ "$FINAL_FAIL" -gt 0 ]; then
+    if [ "$FINAL_TC" != "1" ]; then
+      echo -e "${RED}[GATE] TypeScript compilation failed. REVERTING.${NC}"
+    elif [ "$FINAL_FAIL" -gt 0 ]; then
+      echo -e "${RED}[GATE] $FINAL_FAIL tests still failing. REVERTING.${NC}"
+    fi
+  fi
+
+  if [ "$FINAL_TC" != "1" ] || [ "$FINAL_PASS" -lt "$BEFORE_PASS" ]; then
+    echo -e "${RED}[AUTORESEARCH] Score STILL below baseline. REVERTING iteration changes.${NC}"
+    CHANGED_FILES=$(git diff --name-only 2>/dev/null)
+    if [ -n "$CHANGED_FILES" ]; then
+      echo "$CHANGED_FILES" | xargs git checkout -- 2>/dev/null || true
+      git clean -fd -- $(echo "$CHANGED_FILES" | head -20) 2>/dev/null || true
+    fi
     echo "[$i] REVERTED: $REQ_TEXT — final score $FINAL_PASS < baseline $BEFORE_PASS" >> "$PROGRESS_FILE"
     log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "REVERTED"
     continue
@@ -391,7 +453,16 @@ Fix the bugs. Do not delete or modify the adversary's tests." \
   # Check the requirement box by line number (avoids regex issues with special chars)
   sed -i '' "${REQ_LINE_NUM}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
 
-  git add -A
+  # Only stage files changed in this iteration + the requirements file
+  CHANGED_FILES=$(git diff --name-only 2>/dev/null)
+  UNTRACKED_FILES=$(git ls-files --others --exclude-standard 2>/dev/null)
+  if [ -n "$CHANGED_FILES" ]; then
+    echo "$CHANGED_FILES" | xargs git add 2>/dev/null || true
+  fi
+  if [ -n "$UNTRACKED_FILES" ]; then
+    echo "$UNTRACKED_FILES" | xargs git add 2>/dev/null || true
+  fi
+  git add .planning/REQUIREMENTS.md .planning/build-scores.jsonl progress.txt 2>/dev/null || true
   git commit -m "feat: $(echo "$REQ_TEXT" | head -c 60) (Phase $CURRENT_PHASE)
 
 Ralph iteration $i. Score: $FINAL_PASS passing ($((FINAL_PASS - BEFORE_PASS)) net).
