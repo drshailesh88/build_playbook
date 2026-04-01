@@ -27,11 +27,11 @@ for ((i=1; i<=$ITERATIONS; i++)); do
 
   echo "Working on: $NEXT"
 
-  # Run Aider on the next requirement
+  # Run Aider WITHOUT auto-commits
   aider --model "$MODEL" \
         --read .planning/REQUIREMENTS.md \
         --read .planning/ROADMAP.md \
-        --auto-commits \
+        --no-auto-commits \
         --message "Read .planning/REQUIREMENTS.md. Find this unchecked requirement: $NEXT
 Build ONLY this one requirement. Write code and tests.
 Do NOT check the box in REQUIREMENTS.md — the script handles that after verification.
@@ -41,17 +41,20 @@ Run any available test commands to verify your work." \
   # Log progress
   echo "[$i] $(date): Worked on: $NEXT" >> progress.txt
 
-  # Gate: only mark complete if tests pass
+  # Gate: only commit and mark complete if tests pass
   if npm test 2>/dev/null; then
-    echo "[$i] Tests PASSED — marking requirement complete" >> progress.txt
+    echo "[$i] Tests PASSED — committing and marking requirement complete" >> progress.txt
     # Check the box by line number
     REQ_LINE=$(echo "$NEXT" | cut -d: -f1)
     if [ -n "$REQ_LINE" ]; then
       sed -i '' "${REQ_LINE}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
     fi
+    git add -A
+    git commit -m "feat: $(echo "$NEXT" | cut -d: -f2- | head -c 60) (overnight)" 2>/dev/null || true
   else
-    echo "[$i] Tests FAILED — reverting changes" >> progress.txt
+    echo "[$i] Tests FAILED — reverting all uncommitted changes" >> progress.txt
     git checkout -- . 2>/dev/null || true
+    git clean -fd 2>/dev/null || true
   fi
 done
 

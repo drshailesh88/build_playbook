@@ -454,6 +454,7 @@ PREV_PHASE=$(get_current_phase)
 PHASE_START_PASS=$BASELINE_PASS
 LAST_REQ_ID=""
 CONSECUTIVE_SKIPS=0
+MAIN_DIR=$(pwd)
 
 for ((i=1; i<=$ITERATIONS; i++)); do
 
@@ -535,12 +536,37 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   WORKTREE_BRANCH="ralph-iter-$i"
 
   echo -e "${YELLOW}[WORKTREE] Creating isolated worktree for iteration $i...${NC}"
-  git worktree add "$WORKTREE_DIR" -b "$WORKTREE_BRANCH" 2>/dev/null
+
+  # Create worktree for this iteration
+  if ! git worktree add "$WORKTREE_DIR" -b "$WORKTREE_BRANCH" 2>/dev/null; then
+    echo -e "${RED}[WORKTREE] Failed to create worktree. Cleaning up stale refs...${NC}"
+    git worktree prune 2>/dev/null || true
+    git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+    if ! git worktree add "$WORKTREE_DIR" -b "$WORKTREE_BRANCH" 2>/dev/null; then
+      echo -e "${RED}[WORKTREE] Still failed. Skipping iteration — running without isolation is unsafe.${NC}"
+      echo "[$i] SKIPPED: worktree creation failed" >> "$PROGRESS_FILE"
+      continue
+    fi
+  fi
 
   # Copy the requirements.json into the worktree so the builder can reference it
   cp .planning/requirements.json "$WORKTREE_DIR/.planning/requirements.json" 2>/dev/null || true
 
-  pushd "$WORKTREE_DIR" > /dev/null
+  # Verify we're actually in the worktree
+  pushd "$WORKTREE_DIR" > /dev/null || {
+    echo -e "${RED}[WORKTREE] Failed to enter worktree directory. Skipping iteration.${NC}"
+    git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
+    git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+    echo "[$i] SKIPPED: could not enter worktree" >> "$PROGRESS_FILE"
+    continue
+  }
+
+  # Double-check we're not in the main checkout
+  if [ "$(pwd)" = "$MAIN_DIR" ]; then
+    echo -e "${RED}[WORKTREE] Still in main directory despite pushd. Aborting iteration.${NC}"
+    echo "[$i] SKIPPED: worktree isolation verification failed" >> "$PROGRESS_FILE"
+    continue
+  fi
 
   update_status "$i" "$ITERATIONS" "$REQ_ID" "$REQ_PHASE" "BUILDING" "$BASELINE_PASS" "$CURRENT_SCORE" "" false
 

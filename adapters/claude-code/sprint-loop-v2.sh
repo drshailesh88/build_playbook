@@ -29,7 +29,7 @@ LOOP_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # ─── Docker flag ────────────────────────────────────────────────────────────
 USE_DOCKER=false
-if [ "$1" = "--docker" ] 2>/dev/null; then
+if [ "${1:-}" = "--docker" ] 2>/dev/null; then
   USE_DOCKER=true
   shift
 fi
