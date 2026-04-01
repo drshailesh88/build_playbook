@@ -486,7 +486,15 @@ echo -e "Max heal attempts per requirement: $MAX_HEAL_ATTEMPTS"
 echo -e "Max adversary rounds per requirement: $MAX_ADVERSARY_ROUNDS"
 echo ""
 
-git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
+git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH" 2>/dev/null
+
+# Verify we're on the correct branch
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
+  echo -e "${RED}FATAL: Failed to switch to branch '$BRANCH'. Currently on '$CURRENT_BRANCH'.${NC}"
+  echo -e "${RED}Cannot proceed — overnight changes would land on the wrong branch.${NC}"
+  exit 1
+fi
 
 # ─── SAFETY: Require clean working tree ──────────────────────────────────────
 DIRTY_FILES=$(git status --porcelain 2>/dev/null | grep -v "^??" | wc -l | tr -d ' ')
@@ -631,6 +639,19 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   # Verify we're actually in the worktree
   pushd "$WORKTREE_DIR" > /dev/null || {
     echo -e "${RED}[WORKTREE] Failed to enter worktree directory. Skipping iteration.${NC}"
+    # Persist attempt count in main checkout before discarding worktree
+    python3 -c "
+import json
+with open('.planning/requirements.json') as f:
+    data = json.load(f)
+for r in data['requirements']:
+    if r['id'] == '$REQ_ID':
+        r['attempts'] = r.get('attempts', 0) + 1
+        r['last_error'] = 'Failed to enter worktree directory'
+        break
+with open('.planning/requirements.json', 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null || true
     git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
     git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
     echo "[$i] SKIPPED: could not enter worktree" >> "$PROGRESS_FILE"
@@ -679,7 +700,6 @@ If the requirement is too big, build the smallest meaningful slice."
     echo "[$i] SKIPPED: No code changes from builder ($REQ_ID)" >> "$PROGRESS_FILE"
 
     CONSECUTIVE_SKIPS=$((CONSECUTIVE_SKIPS + 1))
-    increment_requirement_attempts "$REQ_ID"
 
     # V2: Instead of stopping at 3 skips, the rate-limit retry in run_codex_with_retry handles waits.
     # But if we still get 5 empty iterations, something is genuinely wrong.
@@ -688,12 +708,16 @@ If the requirement is too big, build the smallest meaningful slice."
       notify "STOPPED: 5 consecutive empty builder iterations."
       update_status "$i" "$ITERATIONS" "$REQ_ID" "$REQ_PHASE" "STOPPED_EMPTY" "$BASELINE_PASS" "$CURRENT_SCORE" "" false
       popd > /dev/null
+      # Persist attempt count in main checkout before discarding worktree
+      increment_requirement_attempts "$REQ_ID"
       git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
       git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
       break
     fi
 
     popd > /dev/null
+    # Persist attempt count in main checkout (after popd, before worktree removal)
+    increment_requirement_attempts "$REQ_ID"
     git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
     git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
     LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
@@ -730,10 +754,11 @@ Run: npx tsc --noEmit"
       echo -e "${RED}[TYPECHECK] Still failing after fix attempt. DISCARDING worktree.${NC}"
       echo "[$i] DISCARDED: $REQ_ID $REQ_TEXT — TypeScript compilation failed" >> "$PROGRESS_FILE"
       log_score "$i" "$REQ_PHASE" "$REQ_TEXT" "$AFTER_BUILD_PASS" "$AFTER_BUILD_FAIL" "DISCARDED_TYPECHECK"
-      increment_requirement_attempts "$REQ_ID"
 
       # V2: Just discard the worktree — no dangerous reverts
       popd > /dev/null
+      # Persist attempt count in main checkout (after popd, before worktree removal)
+      increment_requirement_attempts "$REQ_ID"
       git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
       git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
       LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
@@ -787,11 +812,12 @@ Fix ONLY what's broken. Do NOT add new features. Do NOT refactor."
       echo -e "${RED}[ANNEAL] Could not heal after $MAX_HEAL_ATTEMPTS attempts. DISCARDING worktree.${NC}"
       echo "[$i] DISCARDED: $REQ_ID $REQ_TEXT — score dropped and could not heal" >> "$PROGRESS_FILE"
       log_score "$i" "$REQ_PHASE" "$REQ_TEXT" "$BEFORE_PASS" "0" "DISCARDED"
-      increment_requirement_attempts "$REQ_ID"
       notify "Iteration $i DISCARDED: $REQ_ID could not heal after $MAX_HEAL_ATTEMPTS attempts."
 
       # V2: Discard worktree — clean isolation
       popd > /dev/null
+      # Persist attempt count in main checkout (after popd, before worktree removal)
+      increment_requirement_attempts "$REQ_ID"
       git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
       git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
       LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
@@ -940,9 +966,10 @@ naming, patterns, and maintainability. Run: npx tsc --noEmit && npm test" || tru
       echo -e "${RED}[ARCHITECT] Score regression after architect review. DISCARDING.${NC}"
       echo "[$i] DISCARDED: $REQ_ID $REQ_TEXT — architect review caused regression" >> "$PROGRESS_FILE"
       log_score "$i" "$REQ_PHASE" "$REQ_TEXT" "$ARCH_PASS" "$ARCH_FAIL" "DISCARDED_ARCHITECT"
-      increment_requirement_attempts "$REQ_ID"
 
       popd > /dev/null
+      # Persist attempt count in main checkout (after popd, before worktree removal)
+      increment_requirement_attempts "$REQ_ID"
       git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
       git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
       LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
@@ -985,9 +1012,10 @@ naming, patterns, and maintainability. Run: npx tsc --noEmit && npm test" || tru
     # V2: Just discard the worktree — no file-by-file revert
     echo "[$i] DISCARDED: $REQ_ID $REQ_TEXT — $GATE_REASON" >> "$PROGRESS_FILE"
     log_score "$i" "$REQ_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "DISCARDED"
-    increment_requirement_attempts "$REQ_ID"
 
     popd > /dev/null
+    # Persist attempt count in main checkout (after popd, before worktree removal)
+    increment_requirement_attempts "$REQ_ID"
     git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
     git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
     LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
@@ -1001,29 +1029,67 @@ naming, patterns, and maintainability. Run: npx tsc --noEmit && npm test" || tru
 
   # Stage and commit all changes in the worktree
   git add -A 2>/dev/null || true
-  git commit -m "feat: $REQ_ID $(echo "$REQ_TEXT" | head -c 50) (Phase $REQ_PHASE)
+  COMMIT_RESULT=$(git commit -m "feat: $REQ_ID $(echo "$REQ_TEXT" | head -c 50) (Phase $REQ_PHASE)
 
 Ralph V2 iteration $i. Score: $FINAL_PASS passing ($((FINAL_PASS - BEFORE_PASS)) net).
-Builder → Tests → Adversary ($MAX_ADVERSARY_ROUNDS rounds) → Architect → Verified." \
-    2>/dev/null || true
+Builder → Tests → Adversary ($MAX_ADVERSARY_ROUNDS rounds) → Architect → Verified." 2>&1)
+  COMMIT_EXIT=$?
 
+  if [ "$COMMIT_EXIT" -ne 0 ]; then
+    echo -e "${RED}[COMMIT] git commit failed in worktree. Aborting iteration.${NC}"
+    echo "[$i] COMMIT FAILED: $COMMIT_RESULT" >> "$PROGRESS_FILE"
+    # Persist attempt count before discarding worktree
+    python3 -c "
+import json
+with open('.planning/requirements.json') as f:
+    data = json.load(f)
+for r in data['requirements']:
+    if r['id'] == '$REQ_ID':
+        r['attempts'] = r.get('attempts', 0) + 1
+        r['last_error'] = 'Commit failed in worktree'
+        break
+with open('.planning/requirements.json', 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null || true
+    popd > /dev/null 2>/dev/null || true
+    # Copy attempt state back to main checkout before removing worktree
+    if [ -f "$WORKTREE_DIR/.planning/requirements.json" ]; then
+      cp "$WORKTREE_DIR/.planning/requirements.json" .planning/requirements.json 2>/dev/null || true
+    fi
+    git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
+    git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+    LAST_REQ_ID=""
+    continue
+  fi
+
+  WORKTREE_HEAD=$(git rev-parse HEAD)
   LAST_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
   # ─── V2 IMPROVEMENT 2: Merge worktree back to main branch ─────────────
   popd > /dev/null
 
   echo -e "${YELLOW}[WORKTREE] Merging iteration $i back to $BRANCH...${NC}"
-  git merge "$WORKTREE_BRANCH" --no-edit 2>/dev/null
-
-  if [ $? -ne 0 ]; then
-    echo -e "${RED}[WORKTREE] Merge conflict. DISCARDING iteration.${NC}"
+  if ! git merge "$WORKTREE_BRANCH" --no-edit 2>/dev/null; then
+    echo -e "${RED}[MERGE] Failed to merge worktree branch. Aborting iteration.${NC}"
+    echo "[$i] MERGE FAILED for $REQ_TEXT" >> "$PROGRESS_FILE"
     git merge --abort 2>/dev/null || true
+    log_score "$i" "$REQ_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "MERGE_CONFLICT"
+    # Persist attempt count in main checkout after failed merge
+    python3 -c "
+import json
+with open('.planning/requirements.json') as f:
+    data = json.load(f)
+for r in data['requirements']:
+    if r['id'] == '$REQ_ID':
+        r['attempts'] = r.get('attempts', 0) + 1
+        r['last_error'] = 'Merge failed back to main branch'
+        break
+with open('.planning/requirements.json', 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null || true
     git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
     git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
-    echo "[$i] DISCARDED: $REQ_ID $REQ_TEXT — merge conflict" >> "$PROGRESS_FILE"
-    log_score "$i" "$REQ_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "MERGE_CONFLICT"
-    increment_requirement_attempts "$REQ_ID"
-    LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
+    LAST_REQ_ID=""
     continue
   fi
 
@@ -1031,7 +1097,7 @@ Builder → Tests → Adversary ($MAX_ADVERSARY_ROUNDS rounds) → Architect →
   git worktree remove "$WORKTREE_DIR" 2>/dev/null || true
   git branch -d "$WORKTREE_BRANCH" 2>/dev/null || true
 
-  # Mark requirement done in JSON and sync back to markdown
+  # Only NOW mark requirement done (after confirmed commit + merge)
   mark_requirement_done "$REQ_ID"
   sync_json_to_markdown
 

@@ -58,12 +58,35 @@ for ((i=1; i<=$ITERATIONS; i++)); do
      Build ONLY this one requirement. Write code and tests.
      Do NOT check the box in REQUIREMENTS.md.
      Do NOT commit.
-     Run: npm test to verify your work." \
+     Run: npx tsc --noEmit && npm test && npm run lint to verify your work." \
     || true
 
   # Script-level verification — don't trust Codex's judgment
-  if npm test 2>/dev/null; then
-    echo "[$i] Tests PASSED — committing" >> progress.txt
+  # Full verification matching AGENTS.md contract
+  VERIFY_PASS=true
+
+  # Typecheck
+  if ! npx tsc --noEmit 2>/dev/null; then
+    echo "[$i] TYPECHECK FAILED" >> progress.txt
+    VERIFY_PASS=false
+  fi
+
+  # Tests
+  if ! npm test 2>/dev/null; then
+    echo "[$i] TESTS FAILED" >> progress.txt
+    VERIFY_PASS=false
+  fi
+
+  # Lint (if available — don't fail if no lint script exists)
+  if npm run lint --if-present 2>/dev/null; then
+    : # lint passed or doesn't exist
+  else
+    echo "[$i] LINT FAILED" >> progress.txt
+    VERIFY_PASS=false
+  fi
+
+  if [ "$VERIFY_PASS" = true ]; then
+    echo "[$i] Verification PASSED (typecheck + test + lint) — committing" >> progress.txt
 
     # Check the box by line number (portable)
     portable_sed_i "${REQ_LINE}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
@@ -76,7 +99,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
     git add .planning/REQUIREMENTS.md progress.txt 2>/dev/null || true
     git commit -m "feat: $(echo "$REQ_TEXT" | head -c 60) (overnight)" 2>/dev/null || true
   else
-    echo "[$i] Tests FAILED — reverting" >> progress.txt
+    echo "[$i] Verification FAILED — reverting" >> progress.txt
     CHANGED=$(git diff --name-only 2>/dev/null)
     [ -n "$CHANGED" ] && echo "$CHANGED" | xargs git checkout -- 2>/dev/null || true
     NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_UNTRACKED") - 2>/dev/null)
