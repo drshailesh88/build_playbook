@@ -97,7 +97,20 @@ for ((i=1; i<=$ITERATIONS; i++)); do
     [ -n "$CHANGED" ] && echo "$CHANGED" | xargs git add 2>/dev/null || true
     [ -n "$NEW_FILES" ] && echo "$NEW_FILES" | xargs git add 2>/dev/null || true
     git add .planning/REQUIREMENTS.md progress.txt 2>/dev/null || true
-    git commit -m "feat: $(echo "$REQ_TEXT" | head -c 60) (overnight)" 2>/dev/null || true
+    # Commit — check exit code
+    if git commit -m "feat: $(echo "$REQ_TEXT" | head -c 60) (overnight)" 2>/dev/null; then
+      echo "[$i] COMMITTED: $REQ_TEXT" >> progress.txt
+    else
+      echo "[$i] COMMIT FAILED — undoing checkbox" >> progress.txt
+      # Undo checkbox
+      portable_sed_i "${REQ_LINE}s/- \[x\]/- [ ]/" .planning/REQUIREMENTS.md
+      git reset HEAD 2>/dev/null || true
+      # Revert changes
+      CHANGED=$(git diff --name-only 2>/dev/null)
+      [ -n "$CHANGED" ] && echo "$CHANGED" | xargs git checkout -- 2>/dev/null || true
+      NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_UNTRACKED") - 2>/dev/null)
+      [ -n "$NEW_FILES" ] && echo "$NEW_FILES" | xargs rm -f 2>/dev/null || true
+    fi
   else
     echo "[$i] Verification FAILED — reverting" >> progress.txt
     CHANGED=$(git diff --name-only 2>/dev/null)

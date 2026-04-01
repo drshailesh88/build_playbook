@@ -382,23 +382,33 @@ with open('.planning/requirements.json', 'w') as f:
 
 sync_json_to_markdown() {
   python3 -c "
-import json
+import json, re
 with open('.planning/requirements.json') as f:
     data = json.load(f)
 with open('.planning/REQUIREMENTS.md') as f:
     lines = f.readlines()
+
 for r in data['requirements']:
-    line_num = r.get('markdown_line')
-    if line_num and line_num <= len(lines):
-        idx = line_num - 1
-        line = lines[idx]
-        if r.get('done', False) or r.get('status', '') == 'done':
-            lines[idx] = line.replace('- [ ]', '- [x]', 1)
-        elif r.get('stuck', False) or r.get('status', '') == 'stuck':
-            # Mark stuck in markdown with a comment
-            if '<!-- STUCK' not in line and '<!-- BLOCKED' not in line:
-                error = r.get('last_error', 'unknown reason')
-                lines[idx] = line.rstrip() + ' <!-- STUCK: ' + str(error)[:80] + ' -->\n'
+    is_done = r.get('done', False) or r.get('status', '') == 'done'
+    is_stuck = r.get('stuck', False) or r.get('status', '') == 'stuck'
+    text = r.get('text', '')
+    if not text:
+        continue
+
+    # Match by text content, not line number
+    # Use first 40 chars escaped for regex safety
+    search_text = re.escape(text[:40])
+
+    for i, line in enumerate(lines):
+        # Only modify checkbox lines that contain this requirement text
+        if re.search(search_text, line) and re.match(r'^- \[[ x]\]', line):
+            if is_done:
+                lines[i] = re.sub(r'^- \[ \]', '- [x]', line)
+            elif is_stuck and '<!-- STUCK' not in line:
+                error = str(r.get('last_error', 'unknown'))[:80]
+                lines[i] = line.rstrip() + ' <!-- STUCK: ' + error + ' -->\n'
+            break  # Found the matching line, move to next requirement
+
 with open('.planning/REQUIREMENTS.md', 'w') as f:
     f.writelines(lines)
 " 2>/dev/null || true
@@ -466,10 +476,24 @@ run_codex_with_retry() {
 
     update_status "$CURRENT_ITER" "$ITERATIONS" "$CURRENT_REQ_ID" "$CURRENT_PHASE_NUM" "RATE_LIMITED" "$BASELINE_PASS" "$CURRENT_SCORE" "" true
 
-    # Poll every 5 minutes until the rate limit clears
+    # Poll every 5 minutes until the rate limit clears (max 1 hour)
+    MAX_RATE_LIMIT_WAIT=3600  # 1 hour max wait
+    RATE_LIMIT_WAITED=0
+
     while true; do
-      echo -e "${YELLOW}Still rate limited. Waiting 5 minutes...${NC}"
+      if [ "$RATE_LIMIT_WAITED" -ge "$MAX_RATE_LIMIT_WAIT" ]; then
+        echo -e "${RED}Rate limit wait exceeded $MAX_RATE_LIMIT_WAIT seconds. STOPPING.${NC}"
+        notify "STOPPED: Rate limit wait exceeded 1 hour"
+        update_status "$CURRENT_ITER" "$ITERATIONS" "$CURRENT_REQ_ID" "$CURRENT_PHASE_NUM" "RATE_LIMIT_BLOCKED" "$BASELINE_PASS" "$CURRENT_SCORE" "" true
+        echo "STOPPED: Rate limit wait exceeded timeout" >> "$PROGRESS_FILE"
+        RATE_LIMIT_BLOCKED=true
+        break
+      fi
+
+      echo -e "${YELLOW}Still rate limited. Waiting 5 minutes... ($RATE_LIMIT_WAITED/${MAX_RATE_LIMIT_WAIT}s elapsed)${NC}"
       sleep 300
+      RATE_LIMIT_WAITED=$((RATE_LIMIT_WAITED + 300))
+
       local health_check=""
       health_check=$(run_codex "echo healthy" 2>&1)
       if ! echo "$health_check" | grep -qi "limit\|error"; then
@@ -490,6 +514,7 @@ CURRENT_ITER=0
 CURRENT_REQ_ID=""
 CURRENT_PHASE_NUM=1
 CURRENT_SCORE=0
+RATE_LIMIT_BLOCKED=false
 
 # =============================================================================
 # MAIN LOOP
@@ -729,6 +754,11 @@ BUILD this ONE requirement:
 6. Do NOT commit yet
 
 If the requirement is too big, build the smallest meaningful slice."
+
+  # After rate limit handler, check if we should stop
+  if [ "${RATE_LIMIT_BLOCKED:-false}" = true ]; then
+    break
+  fi
 
   echo "[BUILDER] Finished building: $REQ_ID $REQ_TEXT" >> "$PROGRESS_FILE"
 
