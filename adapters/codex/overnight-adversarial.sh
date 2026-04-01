@@ -193,9 +193,20 @@ for ((i=1; i<=$ITERATIONS; i++)); do
 
   # ─── Deduplication: detect stuck loop ───────────────────────────────────
   if [ "$REQ_TEXT" = "$LAST_REQ" ]; then
-    echo -e "${RED}STUCK: Same requirement as last iteration. Checkbox update failed. STOPPING.${NC}"
-    echo "STUCK: Same requirement repeated — checkbox update likely failed" >> "$PROGRESS_FILE"
-    break
+    # Check if this is legitimate partial work (not a stuck loop)
+    if grep -q "<!-- PARTIAL.*$(echo "$REQ_TEXT" | head -c 30)" .planning/REQUIREMENTS.md 2>/dev/null; then
+      echo -e "${YELLOW}Requirement has PARTIAL annotation — continuing work from previous iteration.${NC}"
+    elif grep -q "<!-- BLOCKED.*$(echo "$REQ_TEXT" | head -c 30)" .planning/REQUIREMENTS.md 2>/dev/null; then
+      echo -e "${YELLOW}Requirement is BLOCKED — skipping to next.${NC}"
+      # Find and skip to next non-blocked requirement
+      # For now, just continue and let the builder handle it
+      LAST_REQ=""
+      continue
+    else
+      echo -e "${RED}STUCK: Same requirement as last iteration with no PARTIAL/BLOCKED annotation. STOPPING.${NC}"
+      echo "STUCK: Same requirement repeated — checkbox update likely failed" >> "$PROGRESS_FILE"
+      break
+    fi
   fi
   LAST_REQ="$REQ_TEXT"
 

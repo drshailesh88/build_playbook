@@ -129,19 +129,19 @@ update_status() {
 import json
 with open('.planning/requirements.json') as f:
     data = json.load(f)
-print(sum(1 for r in data['requirements'] if r['done']))
+print(sum(1 for r in data['requirements'] if r.get('done', False) or r.get('status', '') == 'done'))
 " 2>/dev/null || echo "0")
     reqs_stuck=$(python3 -c "
 import json
 with open('.planning/requirements.json') as f:
     data = json.load(f)
-print(sum(1 for r in data['requirements'] if r.get('stuck', False)))
+print(sum(1 for r in data['requirements'] if r.get('stuck', False) or r.get('status', '') == 'stuck'))
 " 2>/dev/null || echo "0")
     reqs_remaining=$(python3 -c "
 import json
 with open('.planning/requirements.json') as f:
     data = json.load(f)
-print(sum(1 for r in data['requirements'] if not r['done'] and not r.get('stuck', False)))
+print(sum(1 for r in data['requirements'] if not (r.get('done', False) or r.get('status', '') == 'done') and not (r.get('stuck', False) or r.get('status', '') == 'stuck')))
 " 2>/dev/null || echo "0")
   fi
 
@@ -239,15 +239,35 @@ convert_requirements_to_json() {
   if [ ! -f ".planning/requirements.json" ] && [ -f ".planning/REQUIREMENTS.md" ]; then
     echo -e "${YELLOW}Converting REQUIREMENTS.md to requirements.json...${NC}"
     python3 -c "
-import re, json
+import re, json, os
 with open('.planning/REQUIREMENTS.md') as f:
     lines = f.readlines()
 reqs = []
 phase = 1
 for line in lines:
-    phase_match = re.match(r'###\s+.*[Pp]hase\s+(\d+)', line)
+    # Format 1: ### Phase N or ### Phase N: title
+    phase_match = re.match(r'###?\s+.*[Pp]hase\s+(\d+)', line)
     if phase_match:
         phase = int(phase_match.group(1))
+        continue
+
+    # Format 2: ## Must Have (v1) -> phase 1, ## Should Have (v1.1) -> phase 2
+    must_have = re.match(r'##\s+Must Have', line)
+    if must_have:
+        phase = 1
+        continue
+
+    should_have = re.match(r'##\s+Should Have', line)
+    if should_have:
+        phase = 2
+        continue
+
+    # Format 3: ## Section headings (track but don't override phase)
+    section_match = re.match(r'###\s+\w', line)
+    if section_match and not phase_match:
+        # Track sections as sub-phases within the current phase
+        pass
+
     check = re.match(r'^- \[([ x])\] (.+)', line)
     if check:
         reqs.append({
@@ -256,9 +276,31 @@ for line in lines:
             'phase': phase,
             'done': check.group(1) == 'x',
             'stuck': False,
+            'status': 'done' if check.group(1) == 'x' else 'pending',
             'attempts': 0,
             'last_error': None
         })
+
+# After conversion, check if phase assignment worked
+phases_found = set(r['phase'] for r in reqs)
+if len(phases_found) == 1 and len(reqs) > 5:
+    print(f'WARNING: All {len(reqs)} requirements assigned to Phase {list(phases_found)[0]}.')
+    print('Phase detection may have failed. Check ROADMAP.md for phase structure.')
+    # Try to read ROADMAP.md for phase mapping
+    roadmap_path = '.planning/ROADMAP.md'
+    if os.path.exists(roadmap_path):
+        with open(roadmap_path) as rf:
+            roadmap = rf.read()
+        # Extract phase titles from roadmap
+        roadmap_phases = re.findall(r'Phase\s+(\d+)[:\s]+(.+)', roadmap)
+        if roadmap_phases:
+            print(f'Found {len(roadmap_phases)} phases in ROADMAP.md. Attempting to map requirements to phases.')
+            # Simple heuristic: distribute requirements evenly across phases
+            per_phase = max(1, len(reqs) // len(roadmap_phases))
+            for idx, r in enumerate(reqs):
+                r['phase'] = min(idx // per_phase + 1, len(roadmap_phases))
+            print(f'Distributed requirements across {len(roadmap_phases)} phases.')
+
 with open('.planning/requirements.json', 'w') as f:
     json.dump({'requirements': reqs}, f, indent=2)
 print(f'Converted {len(reqs)} requirements')
@@ -268,13 +310,25 @@ print(f'Converted {len(reqs)} requirements')
 
 get_next_requirement() {
   python3 -c "
-import json
+import json, sys
 with open('.planning/requirements.json') as f:
     data = json.load(f)
+if not data.get('requirements') or len(data['requirements']) == 0:
+    print('ERROR: requirements.json is empty', file=sys.stderr)
+    sys.exit(1)
+sample = data['requirements'][0]
+if 'text' not in sample or ('done' not in sample and 'status' not in sample):
+    print(f\"ERROR: requirements.json has unexpected schema. Expected 'text' + 'done' or 'status'. Got: {list(sample.keys())}\", file=sys.stderr)
+    sys.exit(1)
 for r in data['requirements']:
-    if not r['done'] and not r.get('stuck', False):
-        print(f\"{r['id']}|{r['phase']}|{r['text']}\")
+    # Support both schema formats
+    is_done = r.get('done', False) or r.get('status', '') == 'done'
+    is_stuck = r.get('stuck', False) or r.get('status', '') == 'stuck'
+    if not is_done and not is_stuck:
+        print(f\"{r['id']}|{r.get('phase', 1)}|{r['text']}\")
         break
+else:
+    pass  # No requirement found — print nothing
 " 2>/dev/null || echo ""
 }
 
@@ -287,6 +341,7 @@ with open('.planning/requirements.json') as f:
 for r in data['requirements']:
     if r['id'] == '$req_id':
         r['done'] = True
+        r['status'] = 'done'  # Support both formats
         r['attempts'] = r.get('attempts', 0) + 1
         break
 with open('.planning/requirements.json', 'w') as f:
@@ -304,6 +359,7 @@ with open('.planning/requirements.json') as f:
 for r in data['requirements']:
     if r['id'] == '$req_id':
         r['stuck'] = True
+        r['status'] = 'stuck'  # Support both formats
         r['last_error'] = '''$reason'''
         r['attempts'] = r.get('attempts', 0) + 1
         break
@@ -992,21 +1048,21 @@ REQS_DONE=$(python3 -c "
 import json
 with open('.planning/requirements.json') as f:
     data = json.load(f)
-print(sum(1 for r in data['requirements'] if r['done']))
+print(sum(1 for r in data['requirements'] if r.get('done', False) or r.get('status', '') == 'done'))
 " 2>/dev/null || echo "?")
 
 REQS_STUCK=$(python3 -c "
 import json
 with open('.planning/requirements.json') as f:
     data = json.load(f)
-print(sum(1 for r in data['requirements'] if r.get('stuck', False)))
+print(sum(1 for r in data['requirements'] if r.get('stuck', False) or r.get('status', '') == 'stuck'))
 " 2>/dev/null || echo "?")
 
 REQS_REMAINING=$(python3 -c "
 import json
 with open('.planning/requirements.json') as f:
     data = json.load(f)
-print(sum(1 for r in data['requirements'] if not r['done'] and not r.get('stuck', False)))
+print(sum(1 for r in data['requirements'] if not (r.get('done', False) or r.get('status', '') == 'done') and not (r.get('stuck', False) or r.get('status', '') == 'stuck')))
 " 2>/dev/null || echo "?")
 
 echo -e "Baseline score:    ${GREEN}$BASELINE_PASS passing${NC}"
