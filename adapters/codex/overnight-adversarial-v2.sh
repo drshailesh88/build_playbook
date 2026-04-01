@@ -183,10 +183,10 @@ STATUSEOF
 # ─── HELPER: Capture test score (same as V1) ────────────────────────────────
 capture_score() {
   local typecheck_pass=0
-  local test_output=""
   local pass_count=0
   local fail_count=0
   local total=0
+  local test_exit_code=0
 
   # Run typecheck (ScholarSync uses npx tsc directly, no npm script)
   if npx tsc --noEmit 2>/dev/null; then
@@ -205,17 +205,22 @@ capture_score() {
   else
     # Fallback: run npm test and grep (less reliable but works for non-Vitest)
     local test_output=""
-    test_output=$(npm test 2>&1 || true)
+    test_output=$(npm test 2>&1; test_exit_code=$?)
     pass_count=$(echo "$test_output" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || echo "0")
     fail_count=$(echo "$test_output" | grep -oE '[0-9]+ failed' | tail -1 | grep -oE '[0-9]+' || echo "0")
   fi
 
   total=$((pass_count + fail_count))
 
-  # If we couldn't parse anything, check npm test exit code
+  # FAIL CLOSED: if we couldn't parse anything AND test command failed, assume failure
   if [ "$total" -eq 0 ]; then
+    # Try running npm test just for exit code
     if npm test 2>/dev/null; then
       pass_count=1
+      total=1
+    else
+      # Tests failed but we can't parse output — fail closed
+      fail_count=1
       total=1
     fi
   fi
@@ -615,6 +620,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
     if ! git worktree add "$WORKTREE_DIR" -b "$WORKTREE_BRANCH" 2>/dev/null; then
       echo -e "${RED}[WORKTREE] Still failed. Skipping iteration — running without isolation is unsafe.${NC}"
       echo "[$i] SKIPPED: worktree creation failed" >> "$PROGRESS_FILE"
+      LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
       continue
     fi
   fi
@@ -628,6 +634,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
     git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
     git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
     echo "[$i] SKIPPED: could not enter worktree" >> "$PROGRESS_FILE"
+    LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
     continue
   }
 
@@ -635,6 +642,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   if [ "$(pwd)" = "$MAIN_DIR" ]; then
     echo -e "${RED}[WORKTREE] Still in main directory despite pushd. Aborting iteration.${NC}"
     echo "[$i] SKIPPED: worktree isolation verification failed" >> "$PROGRESS_FILE"
+    LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
     continue
   fi
 
@@ -688,6 +696,7 @@ If the requirement is too big, build the smallest meaningful slice."
     popd > /dev/null
     git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
     git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+    LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
     continue
   fi
   CONSECUTIVE_SKIPS=0
@@ -727,6 +736,7 @@ Run: npx tsc --noEmit"
       popd > /dev/null
       git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
       git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+      LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
       continue
     fi
 
@@ -784,6 +794,7 @@ Fix ONLY what's broken. Do NOT add new features. Do NOT refactor."
       popd > /dev/null
       git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
       git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+      LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
       continue
     fi
   fi
@@ -934,6 +945,7 @@ naming, patterns, and maintainability. Run: npx tsc --noEmit && npm test" || tru
       popd > /dev/null
       git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
       git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+      LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
       continue
     fi
   fi
@@ -978,6 +990,7 @@ naming, patterns, and maintainability. Run: npx tsc --noEmit && npm test" || tru
     popd > /dev/null
     git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || true
     git branch -D "$WORKTREE_BRANCH" 2>/dev/null || true
+    LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
     continue
   fi
 
@@ -1010,6 +1023,7 @@ Builder → Tests → Adversary ($MAX_ADVERSARY_ROUNDS rounds) → Architect →
     echo "[$i] DISCARDED: $REQ_ID $REQ_TEXT — merge conflict" >> "$PROGRESS_FILE"
     log_score "$i" "$REQ_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "MERGE_CONFLICT"
     increment_requirement_attempts "$REQ_ID"
+    LAST_REQ_ID=""  # Clear so transient failure doesn't mark next attempt as stuck
     continue
   fi
 

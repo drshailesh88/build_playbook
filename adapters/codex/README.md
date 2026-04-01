@@ -93,21 +93,35 @@ MORNING (Claude Code — reviewing):
   If not: cherry-pick good commits, discard bad ones
 ```
 
-## Parallel Tasks (Codex's Superpower)
+## Parallel Tasks (Advanced — requires worktree isolation)
 
-Unlike GSD which builds sequentially, Codex can run multiple tasks in parallel:
+Codex can run multiple tasks in parallel, but each MUST run in its own git worktree to avoid clobbering:
 
 ```bash
-# Fire off 5 requirements at once
-codex --full-auto "Build requirement: Users can sign up with email" &
-codex --full-auto "Build requirement: Password reset flow" &
-codex --full-auto "Build requirement: Dashboard layout" &
-codex --full-auto "Build requirement: Search API endpoint" &
-codex --full-auto "Build requirement: User profile page" &
+# Create isolated worktrees for each task
+git worktree add ../parallel-1 -b parallel-req-1
+git worktree add ../parallel-2 -b parallel-req-2
+git worktree add ../parallel-3 -b parallel-req-3
+
+# Run Codex in each worktree (separate terminals or background)
+cd ../parallel-1 && codex exec --full-auto "Build requirement: Users can sign up" &
+cd ../parallel-2 && codex exec --full-auto "Build requirement: Password reset flow" &
+cd ../parallel-3 && codex exec --full-auto "Build requirement: Dashboard layout" &
 wait
+
+# Review each, merge what's good
+cd ../your-project
+git merge parallel-req-1 --no-edit  # if it looks good
+git merge parallel-req-2 --no-edit
+git merge parallel-req-3 --no-edit
+
+# Cleanup
+git worktree remove ../parallel-1
+git worktree remove ../parallel-2
+git worktree remove ../parallel-3
 ```
 
-Each runs in isolation. Review the results, keep what's good.
+**Never run parallel Codex agents in the same working directory.** They will race on the same files and git index, producing corrupted commits.
 
 ## Switching Models
 
