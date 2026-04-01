@@ -53,20 +53,28 @@ capture_score() {
     typecheck_pass=1
   fi
 
-  # Run tests, capture output
-  test_output=$(npm test 2>&1 || true)
+  # Run tests with JSON reporter for reliable parsing
+  # Try Vitest JSON first, fall back to grep parsing
+  local json_output=""
+  json_output=$(npx vitest run --reporter=json 2>/dev/null || true)
 
-  # Try to extract pass/fail counts from common test runners
-  # Jest format: "Tests: X passed, Y failed, Z total"
-  # Vitest format: "Tests  X passed | Y failed"
-  # Playwright format: "X passed Y failed"
-  pass_count=$(echo "$test_output" | grep -oE '[0-9]+ passed' | head -1 | grep -oE '[0-9]+' || echo "0")
-  fail_count=$(echo "$test_output" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo "0")
+  if echo "$json_output" | python3 -c "import json,sys; d=json.load(sys.stdin); print('OK')" 2>/dev/null; then
+    # Parse structured JSON — reliable
+    pass_count=$(echo "$json_output" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('numPassedTests',0))" 2>/dev/null || echo "0")
+    fail_count=$(echo "$json_output" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('numFailedTests',0))" 2>/dev/null || echo "0")
+  else
+    # Fallback: run npm test and grep (less reliable but works for non-Vitest)
+    local test_output=""
+    test_output=$(npm test 2>&1 || true)
+    pass_count=$(echo "$test_output" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || echo "0")
+    fail_count=$(echo "$test_output" | grep -oE '[0-9]+ failed' | tail -1 | grep -oE '[0-9]+' || echo "0")
+  fi
+
   total=$((pass_count + fail_count))
 
-  # If we couldn't parse, check exit code
+  # If we couldn't parse anything, check npm test exit code
   if [ "$total" -eq 0 ]; then
-    if echo "$test_output" | grep -qiE "pass|success|ok"; then
+    if npm test 2>/dev/null; then
       pass_count=1
       total=1
     fi
@@ -194,6 +202,9 @@ for ((i=1; i<=$ITERATIONS; i++)); do
   echo -e "${BLUE}=== Iteration $i/$ITERATIONS | Phase $CURRENT_PHASE ===${NC}"
   echo -e "Requirement: $REQ_TEXT"
   echo ""
+
+  # ─── Snapshot file state before this iteration ──────────────────────────
+  ITER_START_UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | sort)
 
   # ─── SCORE BEFORE (autoresearch: measure before changing) ────────────────
   BEFORE=$(capture_score)
@@ -424,23 +435,33 @@ Fix the bugs. Do not delete or modify the adversary's tests." \
   echo ""
   echo -e "FINAL SCORE: Before=$BEFORE_PASS | After=${FINAL_PASS} passing, ${FINAL_FAIL} failing, TypeCheck: $([ "$FINAL_TC" = "1" ] && echo "PASS" || echo "FAIL")"
 
-  # Gate on: typecheck must pass AND pass count must not drop AND zero failures from adversary
-  if [ "$FINAL_TC" != "1" ] || [ "$FINAL_PASS" -lt "$BEFORE_PASS" ] || [ "$FINAL_FAIL" -gt 0 ]; then
-    if [ "$FINAL_TC" != "1" ]; then
-      echo -e "${RED}[GATE] TypeScript compilation failed. REVERTING.${NC}"
-    elif [ "$FINAL_FAIL" -gt 0 ]; then
-      echo -e "${RED}[GATE] $FINAL_FAIL tests still failing. REVERTING.${NC}"
-    fi
+  # Gate on ALL THREE: typecheck pass + pass count held + zero failures
+  GATE_FAILED=false
+  GATE_REASON=""
+
+  if [ "$FINAL_TC" != "1" ]; then
+    GATE_FAILED=true
+    GATE_REASON="TypeScript compilation failed"
+  elif [ "$FINAL_PASS" -lt "$BEFORE_PASS" ]; then
+    GATE_FAILED=true
+    GATE_REASON="Pass count dropped from $BEFORE_PASS to $FINAL_PASS"
+  elif [ "$FINAL_FAIL" -gt 0 ]; then
+    GATE_FAILED=true
+    GATE_REASON="$FINAL_FAIL tests still failing"
   fi
 
-  if [ "$FINAL_TC" != "1" ] || [ "$FINAL_PASS" -lt "$BEFORE_PASS" ]; then
-    echo -e "${RED}[AUTORESEARCH] Score STILL below baseline. REVERTING iteration changes.${NC}"
+  if [ "$GATE_FAILED" = true ]; then
+    echo -e "${RED}[GATE FAILED] $GATE_REASON. REVERTING iteration changes.${NC}"
     CHANGED_FILES=$(git diff --name-only 2>/dev/null)
     if [ -n "$CHANGED_FILES" ]; then
       echo "$CHANGED_FILES" | xargs git checkout -- 2>/dev/null || true
-      git clean -fd -- $(echo "$CHANGED_FILES" | head -20) 2>/dev/null || true
     fi
-    echo "[$i] REVERTED: $REQ_TEXT — final score $FINAL_PASS < baseline $BEFORE_PASS" >> "$PROGRESS_FILE"
+    # Remove new files created by this iteration
+    NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | comm -13 <(echo "$ITER_START_UNTRACKED") - 2>/dev/null)
+    if [ -n "$NEW_FILES" ]; then
+      echo "$NEW_FILES" | xargs rm -f 2>/dev/null || true
+    fi
+    echo "[$i] REVERTED: $REQ_TEXT — $GATE_REASON" >> "$PROGRESS_FILE"
     log_score "$i" "$CURRENT_PHASE" "$REQ_TEXT" "$FINAL_PASS" "$FINAL_FAIL" "REVERTED"
     continue
   fi
@@ -453,14 +474,14 @@ Fix the bugs. Do not delete or modify the adversary's tests." \
   # Check the requirement box by line number (avoids regex issues with special chars)
   sed -i '' "${REQ_LINE_NUM}s/- \[ \]/- [x]/" .planning/REQUIREMENTS.md
 
-  # Only stage files changed in this iteration + the requirements file
+  # Only stage files changed/created in THIS iteration (not pre-existing untracked files)
   CHANGED_FILES=$(git diff --name-only 2>/dev/null)
-  UNTRACKED_FILES=$(git ls-files --others --exclude-standard 2>/dev/null)
+  NEW_FILES=$(git ls-files --others --exclude-standard 2>/dev/null | sort | comm -13 <(echo "$ITER_START_UNTRACKED") - 2>/dev/null)
   if [ -n "$CHANGED_FILES" ]; then
     echo "$CHANGED_FILES" | xargs git add 2>/dev/null || true
   fi
-  if [ -n "$UNTRACKED_FILES" ]; then
-    echo "$UNTRACKED_FILES" | xargs git add 2>/dev/null || true
+  if [ -n "$NEW_FILES" ]; then
+    echo "$NEW_FILES" | xargs git add 2>/dev/null || true
   fi
   git add .planning/REQUIREMENTS.md .planning/build-scores.jsonl progress.txt 2>/dev/null || true
   git commit -m "feat: $(echo "$REQ_TEXT" | head -c 60) (Phase $CURRENT_PHASE)
