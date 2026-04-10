@@ -265,7 +265,12 @@ execute_issue() {
   local MAIN_DIR=$(pwd)
 
   log "Creating git worktree: ${WORKTREE_DIR}"
-  git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" 2>/dev/null
+  if ! git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" 2>/dev/null; then
+    fail "Failed to create worktree for ${ISSUE_ID}"
+    linear issue update "$ISSUE_ID" --state "Blocked" 2>/dev/null
+    linear issue comment add "$ISSUE_ID" --body "**FAILED** — Could not create git worktree" 2>/dev/null
+    return 1
+  fi
   cd "$WORKTREE_DIR"
 
   # ── PHASE 1: BUILD WITH TDD ────────────────────────────────────────────
@@ -437,24 +442,24 @@ INSTRUCTIONS:
   log "Final score: ${FINAL_PASS} passing (baseline was: ${BEFORE_PASS})"
   log "Type check: $([ "$TYPE_OK" = true ] && echo 'PASS' || echo 'FAIL')"
 
-  # ── MERGE OR REVERT ────────────────────────────────────────────────────
+  # ── BUILT OR REVERT ─────────────────────────────────────────────────────
+  # Workers do NOT merge to main. They leave branches for merge-coordinator.
   cd "$MAIN_DIR"
 
   if [ "$FINAL_PASS" -ge "$BEFORE_PASS" ] 2>/dev/null; then
-    header "MERGING: ${ISSUE_ID}"
-    git merge "$BRANCH_NAME" --no-ff -m "feat: ${ISSUE_TITLE} (${ISSUE_ID}) — score: ${BEFORE_PASS}→${FINAL_PASS}, adversary: ${REVIEWER_AGENT}" 2>/dev/null
+    header "BUILT: ${ISSUE_ID}"
+    # Remove worktree but KEEP the branch alive for merge-coordinator
     git worktree remove "$WORKTREE_DIR" 2>/dev/null || true
-    git branch -d "$BRANCH_NAME" 2>/dev/null || true
 
     local ELAPSED=$(( $(date +%s) - START_TIME ))
     local ELAPSED_MIN=$(( ELAPSED / 60 ))
 
-    linear issue update "$ISSUE_ID" --state "Done" 2>/dev/null
-    linear issue comment add "$ISSUE_ID" --body "**COMPLETED** in ${ELAPSED_MIN}min | Builder: ${BUILDER_AGENT} | Reviewer: ${REVIEWER_AGENT} | Tests: ${BEFORE_PASS}→${FINAL_PASS} (+$((FINAL_PASS - BEFORE_PASS)))" 2>/dev/null
-    notify "${ISSUE_ID} DONE — ${ISSUE_TITLE} (${ELAPSED_MIN}min)"
+    linear issue update "$ISSUE_ID" --label "built" 2>/dev/null
+    linear issue comment add "$ISSUE_ID" --body "**BUILT** in ${ELAPSED_MIN}min | Branch: \`${BRANCH_NAME}\` | Builder: ${BUILDER_AGENT} | Reviewer: ${REVIEWER_AGENT} | Tests: ${BEFORE_PASS}→${FINAL_PASS} (+$((FINAL_PASS - BEFORE_PASS))) | Ready for merge-coordinator" 2>/dev/null
+    notify "${ISSUE_ID} BUILT — ${ISSUE_TITLE} — branch ${BRANCH_NAME} ready (${ELAPSED_MIN}min)"
 
-    ok "MERGED: ${ISSUE_ID} | Score: ${BEFORE_PASS} → ${FINAL_PASS} | Time: ${ELAPSED_MIN}min"
-    update_status "$ISSUE_ID" "done" "Merged successfully"
+    ok "BUILT: ${ISSUE_ID} | Branch: ${BRANCH_NAME} | Score: ${BEFORE_PASS} → ${FINAL_PASS} | Time: ${ELAPSED_MIN}min"
+    update_status "$ISSUE_ID" "built" "Branch ready for integration: ${BRANCH_NAME}"
     return 0
   else
     header "REVERTING: ${ISSUE_ID}"
@@ -462,11 +467,11 @@ INSTRUCTIONS:
     git branch -D "$BRANCH_NAME" 2>/dev/null
 
     linear issue update "$ISSUE_ID" --state "Blocked" 2>/dev/null
-    linear issue comment add "$ISSUE_ID" --body "**REVERTED** — Final score ${FINAL_PASS} < baseline ${BEFORE_PASS}. Worktree deleted. Needs manual attention." 2>/dev/null
+    linear issue comment add "$ISSUE_ID" --body "**REVERTED** — Final score ${FINAL_PASS} < baseline ${BEFORE_PASS}. Branch deleted. Needs manual attention." 2>/dev/null
     notify "${ISSUE_ID} REVERTED — score regression"
 
     fail "REVERTED: ${ISSUE_ID} | Score dropped: ${BEFORE_PASS} → ${FINAL_PASS}"
-    update_status "$ISSUE_ID" "reverted" "Score regression — worktree deleted"
+    update_status "$ISSUE_ID" "reverted" "Score regression — branch deleted"
     return 1
   fi
 }
@@ -556,11 +561,21 @@ echo -e "Reviewer:  ${REVIEWER_AGENT}"
 echo -e "Fixer:     ${FIXER_AGENT}"
 echo -e ""
 echo -e "Total:     ${TOTAL}"
-echo -e "${GREEN}Completed: ${COMPLETED}${NC}"
+echo -e "${GREEN}Built:     ${COMPLETED}${NC}"
 echo -e "${RED}Failed:    ${FAILED}${NC}"
 echo -e "${YELLOW}Blocked:   ${BLOCKED}${NC}"
+echo -e ""
+echo -e "Built branches (ready for integration):"
+for bid in "$@"; do
+  local_branch=$(git branch --list "wt/sprint-${bid}-*" 2>/dev/null | head -1 | tr -d ' ')
+  if [ -n "$local_branch" ]; then
+    echo -e "  ${GREEN}${bid}${NC} → ${local_branch}"
+  fi
+done
+echo -e ""
+echo -e "Next: ${YELLOW}./merge-coordinator.sh${NC} to integrate branches"
 
-notify "Sprint complete: ${COMPLETED}/${TOTAL} done, ${FAILED} failed, ${BLOCKED} blocked"
+notify "Sprint complete: ${COMPLETED}/${TOTAL} built, ${FAILED} failed, ${BLOCKED} blocked"
 
 # Exit with failure if any issues failed
 [ "$FAILED" -eq 0 ] && [ "$BLOCKED" -eq 0 ]

@@ -150,6 +150,7 @@ Map dependencies between ALL subtasks across ALL phases:
 - Subtasks across phases: later phases depend on earlier phases completing
 - Independent modules: can run in parallel even within the same phase
 - When two subtasks touch the same file: SEQUENTIAL (merge conflict risk)
+- When two subtasks touch the same **conflict domain**: SEQUENTIAL (see 7b below)
 - When two subtasks are in different directories/modules: usually PARALLEL
 
 Group into execution groups:
@@ -168,6 +169,41 @@ Group C (after Group B):
 
 ...
 ```
+
+### 7b. Conflict Domain Analysis
+
+<HARD-GATE>
+Scan the actual codebase for shared files that multiple subtasks will touch. Subtasks modifying the same conflict domain MUST be in the same sequential execution group.
+</HARD-GATE>
+
+Scan the codebase for these conflict hotspots:
+
+| Conflict Domain | Files to Check | Risk |
+|-----------------|---------------|------|
+| **Global CSS / Tailwind** | `globals.css`, `tailwind.config.*`, theme files | HIGH |
+| **Barrel exports** | `index.ts`, `index.js` re-export files | HIGH |
+| **Shared types** | `types.ts`, `types/index.ts`, shared interfaces | HIGH |
+| **Database migrations** | `migrations/`, `schema.ts`, `drizzle/` | HIGH |
+| **Router config** | `app/layout.tsx`, route configs, middleware | MEDIUM |
+| **Package deps** | `package.json`, lock files | MEDIUM |
+| **Shared components** | Layout, navigation, sidebar components | MEDIUM |
+
+For each conflict domain found:
+1. List which subtasks touch it
+2. If >1 subtask touches the same domain → force SEQUENTIAL grouping
+3. If a file is touched by >3 subtasks → recommend restructuring:
+
+**Restructuring example (barrel exports):**
+```
+# BEFORE: single index.ts every feature modifies → merge conflict magnet
+src/components/index.ts
+
+# AFTER: per-feature modules that don't conflict
+src/components/notifications/index.ts  ← feature A owns this
+src/components/settings/index.ts       ← feature B owns this
+```
+
+Add a "Conflict Domains" section to the execution plan output (Step 10).
 
 ### 8. Generate Self-Contained Agent Prompts
 
@@ -387,6 +423,12 @@ BUILDER_AGENT=aider AIDER_MODEL=openrouter/qwen/qwen3-coder-480b-free ./adapters
 
 # Always review with a different model than the builder
 REVIEWER_AGENT=codex  # default
+```
+
+### After all groups complete — integrate:
+```bash
+./adapters/linear/merge-coordinator.sh "[LINEAR_PROJECT]"
+# Reviews integration branch, then merge to main when satisfied
 ```
 
 ## Monitor Progress

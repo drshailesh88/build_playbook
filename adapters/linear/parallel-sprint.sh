@@ -114,8 +114,19 @@ run_parallel() {
     fi
   done
 
-  echo -e "\n${CYAN}Results: ${completed} completed, ${failed} failed out of ${count}${NC}\n"
-  notify "Group complete: ${completed}/${count} done, ${failed} failed"
+  echo -e "\n${CYAN}Results: ${completed} built, ${failed} failed out of ${count}${NC}"
+
+  # Show branches ready for integration
+  echo -e "\n${CYAN}Branches ready for integration:${NC}"
+  for issue in "${issues[@]}"; do
+    local branch=$(git branch --list "wt/sprint-${issue}-*" 2>/dev/null | head -1 | tr -d ' ')
+    if [ -n "$branch" ]; then
+      echo -e "  ${GREEN}${issue}${NC} → ${branch}"
+    fi
+  done
+  echo ""
+
+  notify "Group complete: ${completed}/${count} built, ${failed} failed"
 
   [ "$failed" -eq 0 ]
 }
@@ -164,6 +175,8 @@ case "${1:-}" in
         fi
       fi
     done
+    echo -e "\n${CYAN}All groups complete. Run merge-coordinator to integrate:${NC}"
+    echo -e "  ${YELLOW}${SCRIPT_DIR}/merge-coordinator.sh${NC}"
     ;;
   --group)
     group="${2:-}"

@@ -110,8 +110,32 @@ Group C (can run simultaneously after Group B completes):
 Rules for grouping:
 - Requirements within the same phase that don't touch the same files/modules → PARALLEL
 - Requirements that share database tables, API routes, or component trees → SEQUENTIAL
+- Requirements that touch the same **conflict domain** → SEQUENTIAL (see 5b below)
 - Cross-phase requirements → always sequential (later phase waits for earlier)
 - When unsure, mark as SEQUENTIAL (safer)
+
+### 5b. Conflict Domain Analysis
+
+<HARD-GATE>
+Scan the actual codebase for shared files that multiple requirements will touch. Requirements modifying the same conflict domain MUST be in the same sequential execution group.
+</HARD-GATE>
+
+Scan the codebase for these conflict hotspots:
+
+| Conflict Domain | Files to Check | Risk |
+|-----------------|---------------|------|
+| **Global CSS / Tailwind** | `globals.css`, `tailwind.config.*`, theme files | HIGH |
+| **Barrel exports** | `index.ts`, `index.js` re-export files | HIGH |
+| **Shared types** | `types.ts`, `types/index.ts`, shared interfaces | HIGH |
+| **Database migrations** | `migrations/`, `schema.ts`, `drizzle/` | HIGH |
+| **Router config** | `app/layout.tsx`, route configs, middleware | MEDIUM |
+| **Package deps** | `package.json`, lock files | MEDIUM |
+| **Shared components** | Layout, navigation, sidebar components | MEDIUM |
+
+For each conflict domain found:
+1. List which requirements touch it
+2. If >1 requirement touches the same domain → force SEQUENTIAL grouping
+3. If a file is touched by >3 requirements → recommend restructuring into per-feature modules
 
 ### 6. Break Requirements into Agent-Sized Subtasks
 
@@ -299,6 +323,13 @@ graph TD
 ./adapters/linear/parallel-sprint.sh --group A
 # wait for A to finish...
 ./adapters/linear/parallel-sprint.sh --group B
+```
+
+### After all groups complete — integrate:
+```bash
+./adapters/linear/merge-coordinator.sh
+# Serially integrates Built branches, runs tests after each merge
+# Review integration branch, then merge to main
 ```
 ```
 

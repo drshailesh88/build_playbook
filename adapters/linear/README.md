@@ -13,11 +13,16 @@ linear auth login                 # Authenticate (opens browser)
 ## Workflow
 
 ```
-GSD Requirements → /playbook:gsd-to-linear → Linear Issues → sprint-executor.sh → Done
-                                                    ↓
-                                        .planning/linear-execution-plan.md
-                                        (dependency map + parallel groups)
+GSD Requirements → /playbook:gsd-to-linear → Linear Issues → sprint-executor.sh → Built
+                                                    ↓                                ↓
+                                        .planning/linear-execution-plan.md    merge-coordinator.sh
+                                        (dependency map + parallel groups)           ↓
+                                                                                   Done
 ```
+
+Workers (sprint-executor, ralph-loop) build features on isolated branches and mark them "Built".
+The merge-coordinator serially integrates those branches, running tests after each merge.
+This prevents the parallel-builds-shared-files merge conflict problem.
 
 ## Sprint Executor
 
@@ -73,6 +78,25 @@ Runs multiple issues simultaneously, respecting dependency groups.
 ```
 
 Logs for each parallel issue are written to `.planning/parallel-logs/`.
+
+## Merge Coordinator
+
+After parallel builds complete, serially integrates branches with test gates.
+
+```bash
+# Integrate all built branches
+./merge-coordinator.sh
+
+# Filter by project
+./merge-coordinator.sh --project "My Project"
+
+# Skip auto-resolution
+./merge-coordinator.sh --no-auto-resolve
+```
+
+Creates an integration branch, merges each built branch one at a time, runs tests after each.
+If conflicts occur, attempts auto-resolution with Claude Code. Reviews the integration branch
+before merging to main.
 
 ## Monitoring
 

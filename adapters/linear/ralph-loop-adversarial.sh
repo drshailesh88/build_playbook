@@ -330,8 +330,14 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
   linear issue update "$ISSUE_ID" --state "In Progress" 2>/dev/null || true
   linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** iteration ${i} — Claude Code building, Codex reviewing" 2>/dev/null || true
 
-  # ── Snapshot for revert ────────────────────────────────────────────────
-  SNAPSHOT_SHA=$(git rev-parse HEAD 2>/dev/null)
+  # ── Create feature branch ────────────────────────────────────────────
+  BRANCH_NAME="wt/sprint-${ISSUE_ID}-$(date +%s)"
+  git checkout -b "$BRANCH_NAME" 2>/dev/null || {
+    fail "Could not create branch ${BRANCH_NAME}"
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  }
+  log "Branch: ${BRANCH_NAME}"
 
   # ── Measure before ─────────────────────────────────────────────────────
   BEFORE_PASS=$(count_passing)
@@ -381,6 +387,9 @@ PROMPT
 
   if [ "$CHANGED" -eq 0 ] && [ "$NEW_FILES" -eq 0 ]; then
     warn "No code changes produced."
+    git checkout main 2>/dev/null || git checkout - 2>/dev/null
+    git branch -D "$BRANCH_NAME" 2>/dev/null || true
+
     linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** — Builder produced no changes. Skipping." 2>/dev/null || true
     log_score "$i" "$ISSUE_ID" "$BEFORE_PASS" "$BEFORE_PASS" "NO_CHANGES" "0"
 
@@ -433,12 +442,12 @@ Run: ${TEST_CMD} && ${TYPE_CHECK_CMD}" \
     done
 
     if [ "$HEALED" = false ]; then
-      fail "Could not heal. Reverting."
-      git checkout -- . 2>/dev/null || true
-      git clean -fd 2>/dev/null || true
+      fail "Could not heal. Discarding branch."
+      git checkout main 2>/dev/null || git checkout - 2>/dev/null
+      git branch -D "$BRANCH_NAME" 2>/dev/null || true
 
       linear issue update "$ISSUE_ID" --state "Blocked" 2>/dev/null || true
-      linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** — BUILD FAILED. Score ${BEFORE_PASS}→${AFTER_BUILD}, could not heal. Reverted." 2>/dev/null || true
+      linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** — BUILD FAILED. Score ${BEFORE_PASS}→${AFTER_BUILD}, could not heal. Branch deleted." 2>/dev/null || true
       notify "${ISSUE_ID} BLOCKED — build regression"
       log_score "$i" "$ISSUE_ID" "$BEFORE_PASS" "$AFTER_BUILD" "REVERTED_BUILD" "0"
 
@@ -607,13 +616,13 @@ Do NOT commit." \
   fi
 
   if [ "$GATE_FAILED" = true ]; then
-    fail "GATE FAILED: ${GATE_REASON}. Reverting."
+    fail "GATE FAILED: ${GATE_REASON}. Discarding branch."
 
-    git checkout -- . 2>/dev/null || true
-    git clean -fd 2>/dev/null || true
+    git checkout main 2>/dev/null || git checkout - 2>/dev/null
+    git branch -D "$BRANCH_NAME" 2>/dev/null || true
 
     linear issue update "$ISSUE_ID" --state "Blocked" 2>/dev/null || true
-    linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** — GATE FAILED: ${GATE_REASON}. Reverted. Needs manual attention." 2>/dev/null || true
+    linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** — GATE FAILED: ${GATE_REASON}. Branch deleted. Needs manual attention." 2>/dev/null || true
     notify "${ISSUE_ID} GATE FAILED — ${GATE_REASON}"
     log_score "$i" "$ISSUE_ID" "$BEFORE_PASS" "$FINAL_PASS" "REVERTED_GATE" "$REVIEW_ROUNDS_THIS"
 
@@ -634,23 +643,27 @@ Ralph Adversarial iteration ${i}. Tests: ${BEFORE_PASS} → ${FINAL_PASS} (+$((F
 Builder: Claude Code | Adversary: Codex | Review rounds: ${REVIEW_ROUNDS_THIS}."
 
   if git commit -m "$COMMIT_MSG" 2>/dev/null; then
-    ok "Committed: ${ISSUE_ID}"
+    ok "Committed to branch: ${BRANCH_NAME}"
   else
     warn "Nothing to commit"
   fi
 
-  # ── Update Linear: Done ────────────────────────────────────────────────
-  linear issue update "$ISSUE_ID" --state "Done" 2>/dev/null || true
-  linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** — COMPLETE ✓
+  # ── Switch back to main ────────────────────────────────────────────────
+  git checkout main 2>/dev/null || git checkout - 2>/dev/null
+
+  # ── Update Linear: Built (merge-coordinator integrates) ────────────────
+  linear issue update "$ISSUE_ID" --label "built" 2>/dev/null || true
+  linear issue comment add "$ISSUE_ID" --body "**Ralph Adversarial** — BUILT ✓
+Branch: \`${BRANCH_NAME}\`
 Tests: ${BEFORE_PASS} → ${FINAL_PASS} (+$((FINAL_PASS - BEFORE_PASS)))
 Adversarial rounds: ${REVIEW_ROUNDS_THIS}
-Iteration: ${i}" 2>/dev/null || true
+Iteration: ${i}
+Ready for merge-coordinator." 2>/dev/null || true
 
-  notify "${ISSUE_ID} DONE — ${ISSUE_TITLE} (+$((FINAL_PASS - BEFORE_PASS)) tests, ${REVIEW_ROUNDS_THIS} review rounds)"
-  log_score "$i" "$ISSUE_ID" "$BEFORE_PASS" "$FINAL_PASS" "COMMITTED" "$REVIEW_ROUNDS_THIS"
+  notify "${ISSUE_ID} BUILT — ${ISSUE_TITLE} — branch ${BRANCH_NAME} (+$((FINAL_PASS - BEFORE_PASS)) tests, ${REVIEW_ROUNDS_THIS} review rounds)"
+  log_score "$i" "$ISSUE_ID" "$BEFORE_PASS" "$FINAL_PASS" "BUILT" "$REVIEW_ROUNDS_THIS"
 
   COMPLETED=$((COMPLETED + 1))
-  BASELINE_PASS=$FINAL_PASS
 
   echo ""
   log "Cooling down 3s before next iteration..."
@@ -691,5 +704,10 @@ echo -e ""
 echo -e "Scores:  ${YELLOW}cat ${SCORE_FILE}${NC}"
 echo -e "Status:  ${YELLOW}cat ${STATUS_FILE}${NC}"
 echo -e "Linear:  ${YELLOW}linear issue list --team ${LINEAR_TEAM} --project \"${PROJECT}\" --all-states${NC}"
+echo -e ""
+echo -e "Built branches (ready for integration):"
+git branch --list "wt/sprint-*" 2>/dev/null | while read -r b; do echo -e "  ${GREEN}${b}${NC}"; done
+echo -e ""
+echo -e "Next: ${YELLOW}./adapters/linear/merge-coordinator.sh${NC} to integrate branches"
 
 notify "Ralph Adversarial complete: ${COMPLETED} done, ${FAILED} failed. Score: ${BASELINE_PASS}→${FINAL_TOTAL}. Review rounds: ${TOTAL_REVIEW_ROUNDS}"

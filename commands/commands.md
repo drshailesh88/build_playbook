@@ -29,9 +29,10 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 ## Phase 5b: Ralph Loops (via Linear)
 - `./adapters/linear/ralph-loop.sh "Project"` — Simple Ralph: Claude builds each issue, Linear tracks progress
 - `./adapters/linear/ralph-loop-adversarial.sh "Project"` — Adversarial Ralph: Claude builds, Codex attacks, Claude fixes, repeat until clean
-- `./adapters/linear/sprint-executor.sh DRS-10` — Build→Review→Fix one issue (any agent)
+- `./adapters/linear/sprint-executor.sh DRS-10` — Build one issue, leave branch for integration
 - `./adapters/linear/parallel-sprint.sh --group A` — Run parallel group from execution plan
 - `./adapters/linear/parallel-sprint.sh --all` — Run all groups respecting dependencies
+- `./adapters/linear/merge-coordinator.sh` — Serial integration of Built branches with conflict resolution
 - `BUILDER_AGENT=aider REVIEWER_AGENT=codex ./adapters/linear/sprint-executor.sh DRS-10` — Mix agents
 
 ## Phase 6: Quality Gates
