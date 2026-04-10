@@ -26,7 +26,9 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:where-am-i` — Where am I? What's next? (10 seconds)
 - GSD commands: `/gsd:discuss-phase N`, `/gsd:plan-phase N`, `/gsd:execute-phase N`, `/gsd:quick "task"`
 
-## Phase 5b: Multi-Agent Execution (via Linear)
+## Phase 5b: Ralph Loops (via Linear)
+- `./adapters/linear/ralph-loop.sh "Project"` — Simple Ralph: Claude builds each issue, Linear tracks progress
+- `./adapters/linear/ralph-loop-adversarial.sh "Project"` — Adversarial Ralph: Claude builds, Codex attacks, Claude fixes, repeat until clean
 - `./adapters/linear/sprint-executor.sh DRS-10` — Build→Review→Fix one issue (any agent)
 - `./adapters/linear/parallel-sprint.sh --group A` — Run parallel group from execution plan
 - `./adapters/linear/parallel-sprint.sh --all` — Run all groups respecting dependencies
