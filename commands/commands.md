@@ -20,9 +20,17 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `infra-architect` skill — Designs hosting setup (auto, after infra-grill)
 
 ## Phase 5: Build
-- `/playbook:prd-to-gsd` — Bridge PRD to GSD milestone
+- `/playbook:prd-to-gsd` — Bridge PRD to GSD milestone (single-agent interactive workflow)
+- `/playbook:gsd-to-linear` — Push GSD requirements to Linear as agent-sized subtask issues with dependency mapping
+- `/playbook:prd-to-linear` — Skip GSD, break PRD directly into agent-sized Linear issues (multi-agent shortcut)
 - `/playbook:where-am-i` — Where am I? What's next? (10 seconds)
 - GSD commands: `/gsd:discuss-phase N`, `/gsd:plan-phase N`, `/gsd:execute-phase N`, `/gsd:quick "task"`
+
+## Phase 5b: Multi-Agent Execution (via Linear)
+- `./adapters/linear/sprint-executor.sh DRS-10` — Build→Review→Fix one issue (any agent)
+- `./adapters/linear/parallel-sprint.sh --group A` — Run parallel group from execution plan
+- `./adapters/linear/parallel-sprint.sh --all` — Run all groups respecting dependencies
+- `BUILDER_AGENT=aider REVIEWER_AGENT=codex ./adapters/linear/sprint-executor.sh DRS-10` — Mix agents
 
 ## Phase 6: Quality Gates
 - `/playbook:security-audit` — 6-check OWASP security review
