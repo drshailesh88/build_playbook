@@ -131,15 +131,35 @@ Prompt: |
 
 **Critical distinction:**
 - **CODE bug**: The feature doesn't work as described. Fix the application code.
-- **TEST bug**: The feature works but the test is wrong (bad selector, wrong assertion, timing issue). Fix the test.
+- **TEST bug (mechanical)**: Selector changed, timing issue, wait needed. Fix the test mechanics.
+- **TEST bug (oracle)**: The assertion checks the wrong business behavior. DO NOT FIX — escalate.
 - **SPEC bug**: The checkpoint describes something that doesn't make sense. Mark as BLOCKED with explanation.
+
+<HARD-GATE>
+NO ORACLE DRIFT — The anneal loop must NEVER weaken the intent of a test.
+If the test asserts business behavior X and the code does Y, the code is wrong — not the test.
+</HARD-GATE>
 
 #### 3b: Fix
 
 Apply the minimal change:
 - If CODE bug: fix the source file. Use the smallest possible change.
-- If TEST bug: fix the generated test file. Update the selector or assertion.
+- If TEST bug (mechanical): fix ONLY the selector, locator, or wait. Use a reason code.
+- If TEST bug (oracle): DO NOT EDIT. Mark as ESCALATE with explanation. A human or separate QA agent must decide.
 - If SPEC bug: update the spec file to mark checkpoint as BLOCKED with reason.
+
+**Test modification reason codes (REQUIRED for any test file edit):**
+- `SELECTOR_FIX` — CSS/DOM selector changed, test locator updated to match
+- `TIMING_FIX` — added/adjusted waitFor, timeout, or retry
+- `QUARANTINE` — test is flaky, moved to quarantine with explanation
+- `SPEC_CHANGE_APPROVED` — product behavior intentionally changed, approved by human
+
+**NEVER allowed without explicit human approval:**
+- Weakening an assertion (changing `toBe(5)` to `toBeDefined()`)
+- Deleting an assertion
+- Changing expected business values
+- Removing a test scenario
+- Changing contract tests in the same commit as code changes
 
 **Constraints:**
 - ONE fix per iteration — don't bundle unrelated fixes
@@ -183,15 +203,33 @@ Increment retry counter for this checkpoint.
 - [ ] STUCK: **<feature>** — <description> (3 fix attempts failed: <brief summary of what was tried>)
 ```
 
-### Step 4: Re-Run Full Suite
+### Step 4: Autoresearch Ratchet — Regression Check
 
-After all individual fixes, re-run the entire module's test suite to check for regressions:
+<HARD-GATE>
+After EVERY individual fix (not just at the end), verify that no scores dropped.
+The ratchet is mechanical — the agent does not get to judge whether a regression is acceptable.
+</HARD-GATE>
+
+**After each fix commit, run the full regression check:**
 
 ```bash
+# Count ALL passing tests (not just this module)
+npm test 2>&1 | grep -oE '[0-9]+ passed'
+
+# Run this module's full suite
 npx playwright test qa/generated/$ARGUMENTS/ --reporter=json
+
+# Run frozen contract tests if they exist
+test -d contracts/ && npx playwright test contracts/ --reporter=json
 ```
 
-If any previously-passing test now fails (regression), the fix broke something else. Revert the offending commit and mark that checkpoint as STUCK.
+**Ratchet rule:**
+- If total passing test count DROPPED from before the fix → REVERT the fix immediately
+- If any frozen contract test that was passing now fails → REVERT immediately
+- If previously-passing Playwright test now fails → REVERT and mark checkpoint as STUCK
+- The agent is NEVER asked "is this regression acceptable?" — numbers are compared mechanically
+
+**Only after ratchet passes:** proceed to next failure.
 
 ### Step 5: Update Spec Files
 
@@ -264,8 +302,11 @@ If the score dropped after annealing (fixes introduced regressions), flag it.
 
 - **ONE fix per iteration** — never bundle. Each fix gets its own commit and verification.
 - **ALWAYS re-run the specific test after a fix** — evidence before claims.
-- **NEVER modify tests to make them pass artificially** — if the feature doesn't work, fix the feature, not the test. (Exception: test has a genuinely wrong selector or assertion.)
+- **NEVER weaken an assertion to make a test pass** — if the feature doesn't work, fix the feature. Period.
+- **Test edits require a reason code** — `SELECTOR_FIX`, `TIMING_FIX`, `QUARANTINE`, or `SPEC_CHANGE_APPROVED`. No reason code = no test edit.
+- **Frozen contract tests are untouchable** — if a contract test fails, fix the CODE. Never edit `contracts/`.
 - **3 retries max per checkpoint** — then mark STUCK and move on. Don't burn tokens on intractable problems.
-- **Always run regression check** after individual fixes — a fix that breaks something else isn't a fix.
+- **Ratchet after EVERY fix** — run all tests, compare counts. Any drop = revert. No exceptions, no judgment calls.
 - **STUCK items are for humans** — the agent tried 3 times. A human needs to look. Don't pretend these will self-resolve.
 - **Cap total iterations at 50** — if you have 50+ failures, the module needs more than patching. Step back and re-architect.
+- **No oracle drift** — the test defines truth. The code must match the test, not the other way around. If the test is wrong, escalate — don't fix it yourself.

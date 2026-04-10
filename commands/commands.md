@@ -40,12 +40,17 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:anneal-check` — Quality score gate (--gate flag for hard stop)
 - `/playbook:verify-with-codex` — Cross-model code review
 
+## Phase 6b: Independent Oracle
+- `/playbook:contract-pack` — Create frozen acceptance tests from spec BEFORE build (user-approved, independent of code)
+- `/playbook:mutation-gate` — Run Stryker mutation testing, measure real test quality, strengthen weak assertions
+
 ## Phase 7: Harden & Test
 - `/playbook:harden` — Full pipeline in one command (census → specs → test → heal)
-- `/playbook:census-to-specs` — Convert features to test specs
+- `/playbook:census-to-specs` — Convert features to test specs (post-build coverage discovery)
 - `/playbook:spec-runner` — Run Playwright tests from specs
-- `/playbook:anneal` — Self-healing test loop
+- `/playbook:anneal` — Self-healing test loop (with no-oracle-drift rules)
 - `/playbook:generate-feature-doc` — Auto-generate feature docs
+- `./adapters/linear/ralph-loop-qa.sh "Project"` — Overnight QA: adversary attacks, fixes, mutation hardening, per-module locking
 
 ## The One Rule
 When in doubt: `/playbook:where-am-i`
