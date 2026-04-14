@@ -1,0 +1,19 @@
+{
+  "name": "sample-nextjs-app-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Integration-test fixture for the QA controller. Minimal Next.js-shaped app: src/lib/, tests/unit/, app/. No services, no runtime Next.js — only enough surface area to exercise Vitest + Stryker + tier classification end to end.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "stryker": "stryker run"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^8.7.1",
+    "@stryker-mutator/vitest-runner": "^8.7.1",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

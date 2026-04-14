@@ -5,10 +5,20 @@ export default defineConfig({
     globals: false,
     environment: "node",
     include: ["**/*.test.ts"],
-    exclude: ["**/node_modules/**", "**/dist/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/__tests__/integration/**",
+      "**/__fixtures__/**",
+    ],
     coverage: {
       reporter: ["text", "json"],
-      exclude: ["**/*.test.ts", "**/__fixtures__/**", "dist/**"],
+      exclude: [
+        "**/*.test.ts",
+        "**/__fixtures__/**",
+        "**/__tests__/integration/**",
+        "dist/**",
+      ],
     },
   },
 });

@@ -107,7 +107,15 @@ export async function runInstaller(input: InstallInput): Promise<InstallResult> 
   result.copiedFiles = await copyTree(controllerSrc, qaDir, {
     write: isWrite,
     skipExisting: upgrade, // upgrade doesn't clobber user edits to controller
-    excludeNames: new Set(["node_modules", "dist", "coverage", ".gitignore"]),
+    excludeNames: new Set([
+      "node_modules",
+      "dist",
+      "coverage",
+      ".gitignore",
+      "__tests__",
+      "__fixtures__",
+      "installer",
+    ]),
   });
 
   // 2. Run service detection
