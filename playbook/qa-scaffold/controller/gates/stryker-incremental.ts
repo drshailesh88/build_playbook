@@ -28,6 +28,7 @@ import {
 } from "./base.js";
 import { parseStrykerReport } from "../parsers/stryker-json.js";
 import { matchGlob } from "../parsers/stryker-json.js";
+import { getReverseDeps as realGetReverseDeps } from "../detection/dependency-analyzer.js";
 import type {
   ContractIndex,
   GateResult,
@@ -80,7 +81,7 @@ export interface StrykerIncrementalDetails {
   skipReason?: string;
 }
 
-/** Phase 2 stub: reverse-dependencies lookup. Returns empty until Phase 3. */
+/** Phase 2 stub kept for tests; Phase 3 default is real dependency-cruiser. */
 export async function stubReverseDeps(_files: string[]): Promise<string[]> {
   return [];
 }
@@ -91,7 +92,18 @@ export async function runStrykerIncrementalGate(
   const start = Date.now();
   const { config, contract, changedPaths, tiers } = input;
   const runner = config.runCommand ?? defaultRunCommand();
-  const getReverseDeps = input.getReverseDeps ?? stubReverseDeps;
+  // Phase 3: real dependency-cruiser by default; fall back to the stub when
+  // workingDir isn't set (e.g. in synthetic tests).
+  const getReverseDeps =
+    input.getReverseDeps ??
+    (async (files: string[]) => {
+      if (!config.workingDir) return [];
+      try {
+        return await realGetReverseDeps(files, config.workingDir);
+      } catch {
+        return [];
+      }
+    });
 
   const scopeGlobs = contract.affected_modules;
   const reverseDeps = await getReverseDeps(changedPaths);
