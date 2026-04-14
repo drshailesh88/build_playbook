@@ -34,9 +34,10 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:prd-to-linear` — Skip GSD, break PRD directly into Linear issues
 - `/gsd:discuss-phase N`, `/gsd:plan-phase N`, `/gsd:execute-phase N`, `/gsd:quick "task"` — Execute one phase at a time
 
-### Ralph path — autonomous overnight loop
-- `/playbook:prd-to-ralph` — **(TODO — not yet created)** will convert PRD into a format Ralph can consume
-- Huntley's `ralph/run.sh` — External autonomous loop (not in this repo)
+### Ralph path — autonomous overnight loop (external)
+- `/playbook:prd-to-ralph` — Convert the PRD + grilling decisions into Huntley's exact `prd.json` format (flat array with id, category, description, page, ui_details, behavior, data_model, priority, core, passes, tests.{unit,e2e,edge_cases}). After this, you're ready for Ralph.
+- Ralph itself is **external** — pull [github.com/ghuntley/ralph-to-ralph-prod](https://github.com/ghuntley/ralph-to-ralph-prod) into your target app (`build-ralph.sh`, `qa-ralph.sh`, `build-prompt.md`, `qa-prompt.md`). The playbook only writes the `prd.json` Ralph consumes.
+- Flow: `prd-to-ralph` → `./build-ralph.sh 999` (Huntley builds, TDD-first, one feature per iteration) → `./qa-ralph.sh 999` (Huntley's first-pass QA via Codex) → Phase 7 QA pipeline below.
 
 ## Phase 6: Wire Selectors (post-build)
 - `/playbook:wire-selectors <feature>` — Adjust `data-testid` selectors to match real DOM (assertions locked by AST diff audit). Run once per feature after Ralph or GSD finishes.
