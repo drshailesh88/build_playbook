@@ -256,7 +256,7 @@ describe("runOneAttempt — flow orchestration", () => {
   }
 
   function goodFlowRunner(captured: CapturedCall[]): RunCommandFn {
-    return scriptedRunner((call) => {
+    return scriptedRunner(async (call) => {
       if (call.cmd === "git") {
         const sub = call.args[0];
         if (sub === "diff" && call.args.includes("--name-only")) {
@@ -277,7 +277,6 @@ describe("runOneAttempt — flow orchestration", () => {
         return { exitCode: 0, stdout: "", stderr: "", durationMs: 5, timedOut: false };
       }
       if (call.cmd === "npx") {
-        // Match specific tools via the args list.
         const tool = call.args[0];
         if (tool === "tsc") {
           return { exitCode: 0, stdout: "", stderr: "", durationMs: 50, timedOut: false };
@@ -303,14 +302,13 @@ describe("runOneAttempt — flow orchestration", () => {
           };
         }
         if (tool === "vitest") {
-          // Runner should write JUnit file with 1 passing test.
           const outFileArg = call.args.find((a) => a.startsWith("--outputFile="));
           if (outFileArg) {
             const outPath = outFileArg.split("=", 2)[1]!;
-            void fs.mkdir(join(outPath, ".."), { recursive: true }).then(() =>
-              fs.writeFile(
-                outPath,
-                `<?xml version="1.0"?>
+            await fs.mkdir(join(outPath, ".."), { recursive: true });
+            await fs.writeFile(
+              outPath,
+              `<?xml version="1.0"?>
 <testsuites tests="3" failures="0" errors="0" time="0.3">
   <testsuite name="s" tests="3" failures="0" errors="0" skipped="0" time="0.3">
     <testcase classname="c" name="a" time="0.1"/>
@@ -318,39 +316,36 @@ describe("runOneAttempt — flow orchestration", () => {
     <testcase classname="c" name="c" time="0.1"/>
   </testsuite>
 </testsuites>`,
-              ),
             );
           }
           return { exitCode: 0, stdout: "", stderr: "", durationMs: 50, timedOut: false };
         }
         if (tool === "playwright") {
-          // Reporter writes to PLAYWRIGHT_JSON_OUTPUT_FILE
           const outPath = call.env?.PLAYWRIGHT_JSON_OUTPUT_FILE as string | undefined;
           if (outPath) {
-            void fs.mkdir(join(outPath, ".."), { recursive: true }).then(() =>
-              fs.writeFile(
-                outPath,
-                JSON.stringify({
-                  stats: { duration: 100 },
-                  suites: [
-                    {
-                      file: "acceptance.spec.ts",
-                      specs: [
-                        {
-                          title: "login works",
-                          file: "acceptance.spec.ts",
-                          tests: [
-                            {
-                              projectName: "chromium",
-                              results: [{ status: "passed", duration: 100, retry: 0 }],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                }),
-              ),
+            await fs.mkdir(join(outPath, ".."), { recursive: true });
+            await fs.writeFile(
+              outPath,
+              JSON.stringify({
+                stats: { duration: 100 },
+                suites: [
+                  {
+                    file: "acceptance.spec.ts",
+                    specs: [
+                      {
+                        title: "login works",
+                        file: "acceptance.spec.ts",
+                        tests: [
+                          {
+                            projectName: "chromium",
+                            results: [{ status: "passed", duration: 100, retry: 0 }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              }),
             );
           }
           return { exitCode: 0, stdout: "", stderr: "", durationMs: 50, timedOut: false };

@@ -1,27 +1,27 @@
 #!/usr/bin/env node
 /**
- * QA controller — CLI entry point (blueprint Part 5.1, Part 7).
+ * QA controller — CLI entry point (blueprint Part 5.1 + 5.4 + 7).
  *
- * Subcommands:
- *   run              Full session: preflight → lock → baseline → features → summary
- *   baseline         Full Stryker baseline measurement (skeleton for Phase 5)
- *   status           Current state snapshot (stub — Phase 5)
- *   report           Generate cumulative/single-run report (stub — Phase 5)
- *   doctor           Drift check (stub — Phase 5)
- *   clean            Clear stale locks + compress old runs
- *   unblock          Reset BLOCKED feature state (stub — Phase 5)
- *   baseline-reset   Explicit ratchet-down with audit log entry
- *   audit-violations Review all violation history (stub — Phase 5)
- *
- * Phase 3 ships `run`, `baseline-reset`, and `clean` fully. Others print a
- * "not yet implemented" message so the surface is stable.
+ * Subcommands (all fully implemented in Phase 4):
+ *   run                Full session: preflight → lock → baseline → features →
+ *                      release gates → deterministic summary.md + state-delta
+ *   baseline           Full Stryker + Vitest + Playwright to populate state
+ *   status             Current state snapshot + per-tier floor check
+ *   report             List all runs or open a specific run's summary.md
+ *   doctor             Drift checks (services, contract hashes, deprecated
+ *                      commands, tiers coverage, providers consistency)
+ *   clean              Clear stale locks + archive old runs' heavy artifacts
+ *   unblock            Reset BLOCKED feature → pending + clear plateau buffer
+ *   baseline-reset     Explicit ratchet-down with audit log entry
+ *   audit-violations   Aggregate violations.jsonl across all runs by pattern
  */
 import { promises as fs } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { Command } from "commander";
 import yaml from "js-yaml";
 import {
   defaultRunCommand,
+  computeFileHash,
   type RunCommandFn,
 } from "./gates/base.js";
 import {
@@ -29,9 +29,12 @@ import {
   endRun,
   incrementViolationCount,
   initializeState,
+  markFeatureBlocked,
+  readSessionLock,
   readState,
   recordRunFeatureOutcome,
   releaseSessionLock,
+  resetFeatureAttempts,
   resetModuleBaseline,
   startRun,
   writeState,
@@ -44,11 +47,20 @@ import {
 } from "./detection/dependency-analyzer.js";
 import { loadProvider } from "./providers/base.js";
 import { parseStrykerReport } from "./parsers/stryker-json.js";
+import { runReleaseGates, type ReleaseResult } from "./gates/release-runner.js";
+import { writeSummary } from "./reports/summary-writer.js";
+import {
+  buildStateDelta,
+  writeStateDelta,
+} from "./reports/state-delta-writer.js";
 import {
   ContractIndexSchema,
   TierConfigSchema,
+  ViolationEntrySchema,
   SecurityCategorySet,
+  FeatureStateSchema,
   type ContractIndex,
+  type FeatureState,
   type RunId,
   type StateJson,
   type TierConfig,
@@ -56,27 +68,28 @@ import {
 } from "./types.js";
 
 const ISO_NOW = (): string => new Date().toISOString();
-
 const CONTROLLER_VERSION = "0.1.0";
+
+const DEPRECATED_COMMANDS: readonly string[] = [
+  "anneal",
+  "anneal-check",
+  "harden",
+  "spec-runner",
+];
 
 // ─── Session orchestration (testable) ────────────────────────────────────────
 
 export interface SessionInput {
   workingDir: string;
   runCommand?: RunCommandFn;
-  /** Override run id (otherwise generated). */
   runId?: RunId;
-  /** Filter — run only a single feature. */
   featureId?: string;
-  /** Filter — run only features of this category. */
   category?: string;
-  /** Skip the notification side-effect. */
   noNotification?: boolean;
-  /** Skip baseline Stryker (for tests). */
   skipBaselineStryker?: boolean;
-  /** Override onOpen (macOS `open` by default, no-op on tests). */
+  /** Skip release-gate execution (tests, speedy dev runs). */
+  skipReleaseGates?: boolean;
   onOpen?: (path: string) => Promise<void>;
-  /** Override notification. */
   onNotify?: (message: string) => Promise<void>;
 }
 
@@ -88,8 +101,8 @@ export interface SessionResult {
   violationsCount: number;
   summaryPath: string;
   stateDeltaPath: string;
+  releaseVerdict?: ReleaseResult["verdict"];
   endedAt: string;
-  error?: string;
 }
 
 export async function runSession(input: SessionInput): Promise<SessionResult> {
@@ -104,14 +117,12 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
   const policiesDir = join(qualityDir, "policies");
   const contractsDir = join(qualityDir, "contracts");
 
-  // 1. Preflight (R-2).
   await runRecoveryPreflight({
     workingDir: input.workingDir,
     newRunId: runId,
     runCommand,
   });
 
-  // 2. Acquire lock.
   await fs.mkdir(runArtifactsDir, { recursive: true });
   const startedAt = ISO_NOW();
   await acquireSessionLock({
@@ -128,6 +139,7 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
     state = initializeState(startedAt);
     await writeState(statePath, state);
   }
+  const startingState: StateJson = JSON.parse(JSON.stringify(state));
 
   const tiers = await loadTierConfig(policiesDir);
   const contracts = await loadAllContracts(contractsDir);
@@ -136,15 +148,14 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
     ...(input.category !== undefined ? { category: input.category } : {}),
   });
 
-  // 3. Full Stryker baseline (parallel with in-memory init — kept sequential
-  // for simplicity in Phase 3; Phase 5 can parallelize via Promise.all).
+  const baselineStartMs = Date.now();
   let baselineScore: number | undefined;
   if (!input.skipBaselineStryker) {
     baselineScore = await runFullStrykerBaseline(runCommand, input.workingDir);
   }
+  const baselineStrykerMs = Date.now() - baselineStartMs;
   state = startRun(state, runId, startedAt, baselineScore);
 
-  // 4. Feature enumeration + serial loop.
   const provider = await loadProvider(policiesDir, {
     workingDir: input.workingDir,
     runCommand,
@@ -174,13 +185,11 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
       runArtifactsDir,
       provider,
       runCommand,
-      getDirectDeps: (file: string) =>
-        getDirectDeps(file, input.workingDir),
-      getReverseDeps: (files: string[]) =>
-        getReverseDeps(files, input.workingDir),
+      getDirectDeps: (file: string) => getDirectDeps(file, input.workingDir),
+      getReverseDeps: (files: string[]) => getReverseDeps(files, input.workingDir),
     });
     featureResults.push(result);
-    state = result.state; // Adopt any mutation baseline updates.
+    state = result.state;
 
     state = recordRunFeatureOutcome(
       state,
@@ -196,48 +205,105 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
     }
   }
 
-  // 5. End run + persist state.
-  const endedAt = ISO_NOW();
-  state = endRun(state, runId, endedAt);
-  await writeState(statePath, state);
-  await fs.writeFile(
-    join(runArtifactsDir, "state-delta.json"),
-    JSON.stringify(
-      { runId, startedAt, endedAt, featureResultsCount: featureResults.length },
-      null,
-      2,
-    ),
-  );
-
-  // 6. Violations ledger.
-  const violationsJsonl = violationEntries
-    .map((v) => JSON.stringify(v))
-    .join("\n");
-  if (violationsJsonl) {
-    await fs.writeFile(
-      join(runArtifactsDir, "violations.jsonl"),
-      violationsJsonl + "\n",
+  // ── Release gates
+  let releaseResult: ReleaseResult | undefined;
+  let finalStrykerScore: number | undefined;
+  if (!input.skipReleaseGates) {
+    const releaseConfig = await loadReleaseConfig(policiesDir);
+    releaseResult = await runReleaseGates({
+      config: {
+        runId,
+        workingDir: input.workingDir,
+        evidenceDir: join(runArtifactsDir, "evidence"),
+        runCommand,
+      },
+      tiers,
+      ...(releaseConfig.axe?.routes !== undefined
+        ? {
+            axe: {
+              routes: releaseConfig.axe.routes,
+              ...(releaseConfig.axe.baseUrl !== undefined ? { baseUrl: releaseConfig.axe.baseUrl } : {}),
+              ...(releaseConfig.axe.minSeverity !== undefined ? { minSeverity: releaseConfig.axe.minSeverity } : {}),
+            },
+          }
+        : {}),
+      ...(releaseConfig.visual?.routes !== undefined
+        ? {
+            visual: {
+              routes: releaseConfig.visual.routes,
+              ...(releaseConfig.visual.baseUrl !== undefined ? { baseUrl: releaseConfig.visual.baseUrl } : {}),
+            },
+          }
+        : {}),
+      ...(releaseConfig.apiContract !== undefined ? { apiContract: releaseConfig.apiContract } : {}),
+      ...(releaseConfig.bundleSize !== undefined ? { bundleSize: releaseConfig.bundleSize } : {}),
+      ...(releaseConfig.lighthouse !== undefined ? { lighthouse: releaseConfig.lighthouse } : {}),
+      ...(releaseConfig.license !== undefined ? { license: releaseConfig.license } : {}),
+      ...(releaseConfig.migrations !== undefined ? { migrations: releaseConfig.migrations } : {}),
+      ...(releaseConfig.skipGates !== undefined ? { skipGates: releaseConfig.skipGates } : {}),
+    });
+    // Extract final Stryker score from the release-stryker-full gate for the
+    // Baseline → Final row in the summary.
+    const strykerFull = releaseResult.gateResults.find(
+      (g) => g.gateId === "stryker-full",
     );
+    if (strykerFull) {
+      const details = strykerFull.details as { overallScore?: number | null };
+      if (typeof details.overallScore === "number") {
+        finalStrykerScore = details.overallScore;
+      }
+    }
   }
 
-  // 7. Summary.md (deterministic).
+  const endedAt = ISO_NOW();
+  state = endRun(state, runId, endedAt, finalStrykerScore);
+  await writeState(statePath, state);
+
+  // ── Deterministic summary + state-delta
   const summaryPath = join(runArtifactsDir, "summary.md");
-  const summary = buildSummary({
+  await writeSummary({
+    summaryPath,
     runId,
     startedAt,
     endedAt,
+    controllerVersion: CONTROLLER_VERSION,
+    triggeredBy: "qa run",
     featureResults,
+    violationEntries,
+    ...(releaseResult !== undefined ? { releaseResult } : {}),
     state,
-    baselineScore,
-    violationsCount: violationEntries.length,
+    startingState,
+    ...(baselineScore !== undefined ? { baselineStrykerScore: baselineScore } : {}),
+    ...(finalStrykerScore !== undefined ? { finalStrykerScore } : {}),
+    performance: {
+      baselineStrykerMs,
+      fixerInvocations: featureResults.reduce(
+        (sum, f) => sum + f.attempts.length,
+        0,
+      ),
+    },
   });
-  await fs.writeFile(summaryPath, summary);
 
-  // 8. Commit state.
+  const stateDeltaPath = join(runArtifactsDir, "state-delta.json");
+  await writeStateDelta(
+    stateDeltaPath,
+    buildStateDelta({ runId, startingState, endingState: state }),
+  );
+
+  if (violationEntries.length > 0) {
+    await fs.writeFile(
+      join(runArtifactsDir, "violations.jsonl"),
+      violationEntries.map((v) => JSON.stringify(v)).join("\n") + "\n",
+    );
+  }
+
+  // ── Commit state
   try {
-    await runCommand("git", ["add", ".quality/state.json", `.quality/runs/${runId}/`], {
-      cwd: input.workingDir,
-    });
+    await runCommand(
+      "git",
+      ["add", ".quality/state.json", `.quality/runs/${runId}/`],
+      { cwd: input.workingDir },
+    );
     await runCommand(
       "git",
       ["commit", "-m", `chore(qa): state update after ${runId}`],
@@ -247,46 +313,61 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
       },
     );
   } catch {
-    // Commit is best-effort; user may commit manually.
+    /* best-effort */
   }
 
-  // 9. Release lock.
   await releaseSessionLock(lockPath);
 
-  // 10. Notifications.
-  const greenCount = featureResults.filter(
-    (f) => f.finalOutcome === "GREEN",
-  ).length;
+  const greenCount = featureResults.filter((f) => f.finalOutcome === "GREEN").length;
   const blockedCount = featureResults.length - greenCount;
-  const verdictMsg = `QA run complete: ${greenCount} green, ${blockedCount} blocked`;
+  const verdictMsg = `QA run complete: ${greenCount} green, ${blockedCount} blocked${releaseResult ? `, release ${releaseResult.verdict}` : ""}`;
   if (!input.noNotification) {
     const notifier = input.onNotify ?? defaultNotify;
-    await notifier(verdictMsg).catch(() => {
-      /* notifications are best-effort */
-    });
+    await notifier(verdictMsg).catch(() => {});
     const opener = input.onOpen ?? defaultOpen;
-    await opener(summaryPath).catch(() => {
-      /* also best-effort */
-    });
+    await opener(summaryPath).catch(() => {});
   }
 
   return {
     runId,
     featuresAttempted: featureResults.map((f) => f.featureId),
-    featuresGreen: featureResults
-      .filter((f) => f.finalOutcome === "GREEN")
-      .map((f) => f.featureId),
-    featuresBlocked: featureResults
-      .filter((f) => f.finalOutcome === "BLOCKED")
-      .map((f) => f.featureId),
+    featuresGreen: featureResults.filter((f) => f.finalOutcome === "GREEN").map((f) => f.featureId),
+    featuresBlocked: featureResults.filter((f) => f.finalOutcome === "BLOCKED").map((f) => f.featureId),
     violationsCount: violationEntries.length,
     summaryPath,
-    stateDeltaPath: join(runArtifactsDir, "state-delta.json"),
+    stateDeltaPath,
+    ...(releaseResult !== undefined ? { releaseVerdict: releaseResult.verdict } : {}),
     endedAt,
   };
 }
 
-// ─── Baseline reset command ──────────────────────────────────────────────────
+// ─── Release config loader ───────────────────────────────────────────────────
+
+interface ReleasePolicyFile {
+  axe?: { routes?: string[]; baseUrl?: string; minSeverity?: "minor" | "moderate" | "serious" | "critical" };
+  visual?: { routes?: string[]; baseUrl?: string };
+  apiContract?: { baseUrl?: string };
+  bundleSize?: { buildDir?: string; thresholds?: Record<string, number>; totalMaxBytes?: number; defaultMaxBytes?: number };
+  lighthouse?: { thresholds?: Record<string, number>; configPath?: string };
+  license?: { forbidden?: string[]; failOnUnknown?: boolean };
+  migrations?: { migrationsDir?: string };
+  skipGates?: string[];
+}
+
+async function loadReleaseConfig(
+  policiesDir: string,
+): Promise<ReleasePolicyFile> {
+  const path = join(policiesDir, "release.yaml");
+  const raw = await fs.readFile(path, "utf8").catch(() => null);
+  if (raw === null) return {};
+  try {
+    return (yaml.load(raw) as ReleasePolicyFile) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+// ─── baseline-reset ──────────────────────────────────────────────────────────
 
 export interface BaselineResetInput {
   workingDir: string;
@@ -314,7 +395,7 @@ export async function runBaselineReset(
   await writeState(statePath, updated);
 }
 
-// ─── Clean command ───────────────────────────────────────────────────────────
+// ─── clean ───────────────────────────────────────────────────────────────────
 
 export interface CleanResult {
   staleLockCleared: boolean;
@@ -334,11 +415,10 @@ export async function runClean(input: CleanInput): Promise<CleanResult> {
   const lockPath = join(qualityDir, "state.lock");
   const runsDir = join(qualityDir, "runs");
 
-  // 1. Clear stale lock (if present).
   let staleLockCleared = false;
   try {
-    const { readSessionLock, isLockAlive } = await import("./state-manager.js");
-    const lock = await readSessionLock(lockPath);
+    const { readSessionLock: readLock, isLockAlive } = await import("./state-manager.js");
+    const lock = await readLock(lockPath);
     if (lock && !isLockAlive(lock, input.pidAlive)) {
       await fs.unlink(lockPath);
       staleLockCleared = true;
@@ -347,7 +427,6 @@ export async function runClean(input: CleanInput): Promise<CleanResult> {
     /* ignore */
   }
 
-  // 2. Archive heavy artifacts from runs older than retentionDays.
   const archivedRuns: string[] = [];
   const retainedRuns: string[] = [];
   let entries: string[] = [];
@@ -363,7 +442,6 @@ export async function runClean(input: CleanInput): Promise<CleanResult> {
     const stat = await fs.stat(runDir).catch(() => null);
     if (!stat || !stat.isDirectory()) continue;
     if (stat.mtimeMs < cutoff) {
-      // Remove heavy gitignored artifact dirs; keep summary + state-delta.
       for (const heavy of [
         "evidence",
         "fixer-notes",
@@ -371,8 +449,7 @@ export async function runClean(input: CleanInput): Promise<CleanResult> {
         "stryker-html",
         "playwright-report",
       ]) {
-        const heavyPath = join(runDir, heavy);
-        await fs.rm(heavyPath, { recursive: true, force: true });
+        await fs.rm(join(runDir, heavy), { recursive: true, force: true });
       }
       archivedRuns.push(name);
     } else {
@@ -383,13 +460,455 @@ export async function runClean(input: CleanInput): Promise<CleanResult> {
   return { staleLockCleared, archivedRuns, retainedRuns };
 }
 
+// ─── status ──────────────────────────────────────────────────────────────────
+
+export interface StatusReport {
+  lastRunId?: string;
+  features: {
+    total: number;
+    green: number;
+    blocked: number;
+    pending: number;
+    in_progress: number;
+  };
+  modules: Array<{
+    path: string;
+    tier: string;
+    baseline: number;
+    floor: number | null;
+    hasExceededFloor: boolean;
+    belowFloor: boolean;
+  }>;
+  testCountHistoryLatest: {
+    vitest_unit: number | undefined;
+    vitest_integration: number | undefined;
+    playwright: number | undefined;
+  };
+}
+
+export async function runStatus(
+  workingDir: string,
+): Promise<StatusReport> {
+  const statePath = join(workingDir, ".quality", "state.json");
+  const state = await readState(statePath);
+
+  const counts = { total: 0, green: 0, blocked: 0, pending: 0, in_progress: 0 };
+  for (const feat of Object.values(state.features)) {
+    counts.total++;
+    counts[feat.status]++;
+  }
+
+  const modules: StatusReport["modules"] = [];
+  for (const [path, baseline] of Object.entries(state.modules)) {
+    const floor = tierFloor(baseline.tier);
+    modules.push({
+      path,
+      tier: baseline.tier,
+      baseline: baseline.mutation_baseline,
+      floor,
+      hasExceededFloor: baseline.has_exceeded_floor,
+      belowFloor: floor !== null && baseline.mutation_baseline < floor,
+    });
+  }
+
+  const history = state.test_count_history;
+  return {
+    ...(state.last_run_id !== undefined ? { lastRunId: state.last_run_id } : {}),
+    features: counts,
+    modules: modules.sort((a, b) => a.path.localeCompare(b.path)),
+    testCountHistoryLatest: {
+      vitest_unit: history.vitest_unit[history.vitest_unit.length - 1],
+      vitest_integration: history.vitest_integration[history.vitest_integration.length - 1],
+      playwright: history.playwright[history.playwright.length - 1],
+    },
+  };
+}
+
+function tierFloor(tier: string): number | null {
+  if (tier === "critical_75") return 75;
+  if (tier === "business_60") return 60;
+  return null;
+}
+
+// ─── report ──────────────────────────────────────────────────────────────────
+
+export interface RunListEntry {
+  runId: string;
+  startedAt?: string;
+  endedAt?: string;
+  summaryPath: string;
+  summaryExists: boolean;
+  verdictLine?: string;
+}
+
+export async function listRuns(workingDir: string): Promise<RunListEntry[]> {
+  const runsDir = join(workingDir, ".quality", "runs");
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(runsDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  const runs: RunListEntry[] = [];
+  for (const name of entries) {
+    if (name === "abandoned" || name.startsWith(".")) continue;
+    const runDir = join(runsDir, name);
+    const stat = await fs.stat(runDir).catch(() => null);
+    if (!stat || !stat.isDirectory()) continue;
+    const summaryPath = join(runDir, "summary.md");
+    const summaryExists = await fs
+      .access(summaryPath)
+      .then(() => true)
+      .catch(() => false);
+    let verdictLine: string | undefined;
+    if (summaryExists) {
+      const raw = await fs.readFile(summaryPath, "utf8").catch(() => "");
+      const match = raw.match(/\*\*Status:\*\*\s*(.+)/);
+      if (match) verdictLine = match[1]!.trim();
+    }
+    runs.push({
+      runId: name,
+      summaryPath,
+      summaryExists,
+      ...(verdictLine !== undefined ? { verdictLine } : {}),
+    });
+  }
+  return runs.sort((a, b) => a.runId.localeCompare(b.runId));
+}
+
+export async function readRunSummary(
+  workingDir: string,
+  runId: string,
+): Promise<string> {
+  const summaryPath = join(workingDir, ".quality", "runs", runId, "summary.md");
+  return fs.readFile(summaryPath, "utf8");
+}
+
+// ─── doctor ──────────────────────────────────────────────────────────────────
+
+export interface DoctorReport {
+  ok: boolean;
+  issues: DoctorIssue[];
+  checked: string[];
+}
+
+export interface DoctorIssue {
+  check: string;
+  severity: "error" | "warn";
+  message: string;
+}
+
+export async function runDoctor(workingDir: string): Promise<DoctorReport> {
+  const issues: DoctorIssue[] = [];
+  const checked: string[] = [];
+
+  const qualityDir = join(workingDir, ".quality");
+  const contractsDir = join(qualityDir, "contracts");
+  const policiesDir = join(qualityDir, "policies");
+
+  // 1. Deprecated commands present?
+  checked.push("deprecated-commands");
+  const playbookCommands = resolve(workingDir, "..", "build_playbook", "commands");
+  for (const dep of DEPRECATED_COMMANDS) {
+    const path = join(playbookCommands, `${dep}.md`);
+    const exists = await fs.access(path).then(() => true).catch(() => false);
+    if (exists) {
+      issues.push({
+        check: "deprecated-commands",
+        severity: "warn",
+        message: `Deprecated command still present: ${dep}.md. Move to commands/deprecated/ or remove.`,
+      });
+    }
+  }
+
+  // 2. Contract hashes vs actual
+  checked.push("contract-hashes");
+  const contracts = await loadAllContracts(contractsDir);
+  for (const contract of contracts) {
+    for (const [filename, storedHash] of Object.entries(contract.hashes)) {
+      const artifactPath = join(contractsDir, contract.feature.id, filename);
+      try {
+        const actual = await computeFileHash(artifactPath);
+        if (actual !== storedHash) {
+          issues.push({
+            check: "contract-hashes",
+            severity: "error",
+            message: `Contract ${contract.feature.id}/${filename} hash mismatch (stored ${storedHash.slice(0, 22)}..., actual ${actual.slice(0, 22)}...)`,
+          });
+        }
+      } catch {
+        issues.push({
+          check: "contract-hashes",
+          severity: "error",
+          message: `Contract artifact missing: ${contract.feature.id}/${filename}`,
+        });
+      }
+    }
+  }
+
+  // 3. Tiers coverage (6b.iii fail-fast — unclassified source files)
+  checked.push("tiers-coverage");
+  const tierConfig = await loadTierConfig(policiesDir).catch(() => null);
+  if (tierConfig) {
+    const unclassified = await findUnclassifiedSources(workingDir, tierConfig);
+    for (const path of unclassified.slice(0, 10)) {
+      issues.push({
+        check: "tiers-coverage",
+        severity: "error",
+        message: `Unclassified source file: ${path} (no tiers.yaml glob matched)`,
+      });
+    }
+    if (unclassified.length > 10) {
+      issues.push({
+        check: "tiers-coverage",
+        severity: "error",
+        message: `...and ${unclassified.length - 10} more unclassified files`,
+      });
+    }
+  }
+
+  // 4. Providers policy consistency
+  checked.push("providers-policy");
+  const providersPath = join(policiesDir, "providers.yaml");
+  const providersRaw = await fs.readFile(providersPath, "utf8").catch(() => null);
+  if (providersRaw) {
+    try {
+      const policy = yaml.load(providersRaw) as {
+        active_fixer?: string;
+        enabled?: string[];
+        disabled?: string[];
+      };
+      if (
+        policy.active_fixer &&
+        policy.disabled?.includes(policy.active_fixer) &&
+        !policy.enabled?.includes(policy.active_fixer)
+      ) {
+        issues.push({
+          check: "providers-policy",
+          severity: "error",
+          message: `active_fixer "${policy.active_fixer}" is in disabled list`,
+        });
+      }
+    } catch {
+      issues.push({
+        check: "providers-policy",
+        severity: "warn",
+        message: `providers.yaml failed to parse`,
+      });
+    }
+  }
+
+  // 5. detected-services vs package.json
+  checked.push("detected-services");
+  const detectedPath = join(policiesDir, "detected-services.yaml");
+  const detectedRaw = await fs.readFile(detectedPath, "utf8").catch(() => null);
+  if (detectedRaw) {
+    try {
+      const detected = yaml.load(detectedRaw) as { services?: string[] };
+      const pkgPath = join(workingDir, "package.json");
+      const pkgRaw = await fs.readFile(pkgPath, "utf8").catch(() => null);
+      if (pkgRaw) {
+        const pkg = JSON.parse(pkgRaw) as {
+          dependencies?: Record<string, string>;
+          devDependencies?: Record<string, string>;
+        };
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        for (const service of detected.services ?? []) {
+          // Heuristic: services often have package name patterns containing
+          // the service name (e.g. "@clerk/nextjs" contains "clerk").
+          const found = Object.keys(deps).some((d) =>
+            d.toLowerCase().includes(service.toLowerCase()),
+          );
+          if (!found) {
+            issues.push({
+              check: "detected-services",
+              severity: "warn",
+              message: `Service "${service}" in detected-services.yaml but no matching package.json dep`,
+            });
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return {
+    ok: issues.filter((i) => i.severity === "error").length === 0,
+    issues,
+    checked,
+  };
+}
+
+// ─── unblock ─────────────────────────────────────────────────────────────────
+
+export async function runUnblock(
+  workingDir: string,
+  featureId: string,
+): Promise<void> {
+  const statePath = join(workingDir, ".quality", "state.json");
+  const state = await readState(statePath);
+  const existing = state.features[featureId];
+  if (!existing) {
+    throw new Error(`Feature "${featureId}" not found in state.json`);
+  }
+  if (existing.status !== "blocked") {
+    throw new Error(
+      `Feature "${featureId}" is ${existing.status}, not blocked. Nothing to unblock.`,
+    );
+  }
+  const next: FeatureState = FeatureStateSchema.parse({
+    contract_version: existing.contract_version,
+    status: "pending",
+    attempts_this_session: 0,
+    plateau_buffer: [],
+  });
+  const updated: StateJson = {
+    ...state,
+    last_updated: ISO_NOW(),
+    features: { ...state.features, [featureId]: next },
+  };
+  await writeState(statePath, updated);
+}
+
+// Re-export for external test consumption
+export { markFeatureBlocked, resetFeatureAttempts };
+
+// ─── audit-violations ────────────────────────────────────────────────────────
+
+export interface ViolationAuditReport {
+  totalRuns: number;
+  runsWithViolations: number;
+  totalViolations: number;
+  byPattern: Record<string, { count: number; runs: string[] }>;
+}
+
+export async function runAuditViolations(
+  workingDir: string,
+): Promise<ViolationAuditReport> {
+  const runsDir = join(workingDir, ".quality", "runs");
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(runsDir);
+  } catch {
+    return {
+      totalRuns: 0,
+      runsWithViolations: 0,
+      totalViolations: 0,
+      byPattern: {},
+    };
+  }
+
+  const report: ViolationAuditReport = {
+    totalRuns: 0,
+    runsWithViolations: 0,
+    totalViolations: 0,
+    byPattern: {},
+  };
+  for (const name of entries) {
+    if (name === "abandoned" || name.startsWith(".")) continue;
+    const runDir = join(runsDir, name);
+    const stat = await fs.stat(runDir).catch(() => null);
+    if (!stat || !stat.isDirectory()) continue;
+    report.totalRuns++;
+
+    const jsonlPath = join(runDir, "violations.jsonl");
+    const raw = await fs.readFile(jsonlPath, "utf8").catch(() => null);
+    if (raw === null) continue;
+    report.runsWithViolations++;
+    for (const line of raw.split("\n")) {
+      if (line.trim() === "") continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const result = ViolationEntrySchema.safeParse(parsed);
+      if (!result.success) continue;
+      for (const v of result.data.violations) {
+        report.totalViolations++;
+        const bucket = report.byPattern[v.pattern_id] ?? { count: 0, runs: [] };
+        bucket.count++;
+        if (!bucket.runs.includes(name)) bucket.runs.push(name);
+        report.byPattern[v.pattern_id] = bucket;
+      }
+    }
+  }
+  return report;
+}
+
+// ─── baseline (full) ─────────────────────────────────────────────────────────
+
+export interface BaselineInput {
+  workingDir: string;
+  runCommand?: RunCommandFn;
+  module?: string;
+}
+
+export async function runBaseline(input: BaselineInput): Promise<void> {
+  const runCommand = input.runCommand ?? defaultRunCommand();
+  const statePath = join(input.workingDir, ".quality", "state.json");
+
+  let state: StateJson;
+  try {
+    state = await readState(statePath);
+  } catch {
+    state = initializeState(ISO_NOW());
+  }
+
+  // Full Stryker — either full project or targeted module.
+  const args = ["stryker", "run"];
+  if (input.module) {
+    args.push("--mutate", input.module);
+  }
+  const stryker = await runCommand("npx", args, {
+    cwd: input.workingDir,
+    timeout: 60 * 60 * 1000,
+  });
+  if (stryker.exitCode !== 0 && stryker.exitCode !== 1) {
+    throw new Error(
+      `Stryker baseline failed with exit ${stryker.exitCode}: ${stryker.stderr}`,
+    );
+  }
+  const stryReport = await parseStrykerReport(
+    join(input.workingDir, "reports", "mutation", "mutation.json"),
+  );
+
+  // Apply new module baselines (ratchet-up only; explicit reset required for
+  // downward adjustments).
+  const tiers = await loadTierConfig(join(input.workingDir, ".quality", "policies"));
+  const { applyMutationMeasurement } = await import("./state-manager.js");
+  const { classifyFile } = await import("./parsers/stryker-json.js");
+  for (const [modulePath, score] of stryReport.perFile.entries()) {
+    if (score.score === null) continue;
+    const tier = classifyFile(modulePath, tiers) ?? score.tier;
+    if (!tier) continue; // unclassified → skip; qa-doctor will flag
+    try {
+      state = applyMutationMeasurement({
+        state,
+        modulePath,
+        newScore: score.score,
+        tier,
+        runId: "baseline-manual",
+        timestamp: ISO_NOW(),
+      }).state;
+    } catch {
+      // ratchet violation — expected for the baseline command if scores
+      // regressed since last ratchet. Skip silently; user should use
+      // baseline-reset for those.
+    }
+  }
+
+  await writeState(statePath, state);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function generateRunId(): RunId {
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const rand = Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, "0");
+  const rand = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
   return `run-${ts}-${rand}`;
 }
 
@@ -397,7 +916,6 @@ async function loadTierConfig(policiesDir: string): Promise<TierConfig> {
   const path = join(policiesDir, "tiers.yaml");
   const raw = await fs.readFile(path, "utf8").catch(() => null);
   if (raw === null) {
-    // Minimal config when missing (Phase 5 scaffold will write this).
     return TierConfigSchema.parse({
       schema_version: 1,
       tiers: { critical_75: [], business_60: [], ui_gates_only: [] },
@@ -438,8 +956,6 @@ export function applyCategoryGate(
   contracts: ContractIndex[],
   filter: CategoryGateFilter = {},
 ): ContractIndex[] {
-  // 12d: auth / payments / user_data — MUST be frozen; otherwise hard error.
-  //      business_logic / ui — not frozen = skip with warning (O-γ).
   const critical: ContractIndex[] = [];
   const business: ContractIndex[] = [];
   const errors: string[] = [];
@@ -457,10 +973,7 @@ export function applyCategoryGate(
         critical.push(c);
       }
     } else {
-      if (c.feature.status !== "frozen") {
-        // Skip-with-warning in Phase 3; the controller's release log captures these.
-        continue;
-      }
+      if (c.feature.status !== "frozen") continue;
       business.push(c);
     }
   }
@@ -468,7 +981,6 @@ export function applyCategoryGate(
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-
   return [...critical, ...business];
 }
 
@@ -478,11 +990,9 @@ async function runFullStrykerBaseline(
 ): Promise<number | undefined> {
   const outcome = await runCommand("npx", ["stryker", "run"], {
     cwd: workingDir,
-    timeout: 60 * 60 * 1000, // 1 hour safety
+    timeout: 60 * 60 * 1000,
   });
-  if (outcome.exitCode !== 0 && outcome.exitCode !== 1) {
-    return undefined;
-  }
+  if (outcome.exitCode !== 0 && outcome.exitCode !== 1) return undefined;
   try {
     const report = await parseStrykerReport(
       join(workingDir, "reports", "mutation", "mutation.json"),
@@ -493,126 +1003,48 @@ async function runFullStrykerBaseline(
   }
 }
 
-export interface BuildSummaryInput {
-  runId: RunId;
-  startedAt: string;
-  endedAt: string;
-  featureResults: FeatureLoopResult[];
-  state: StateJson;
-  baselineScore: number | undefined;
-  violationsCount: number;
-}
-
-export function buildSummary(input: BuildSummaryInput): string {
-  const { runId, startedAt, endedAt, featureResults, state, violationsCount } = input;
-
-  const greens = featureResults.filter((f) => f.finalOutcome === "GREEN");
-  const blocked = featureResults.filter((f) => f.finalOutcome === "BLOCKED");
-  const duration = prettyDuration(startedAt, endedAt);
-
-  const runRecord = state.runs[runId];
-  const finalScore = runRecord?.final_full_mutation_score;
-  const baselineRecorded = runRecord?.baseline_full_mutation_score;
-
-  const lines: string[] = [];
-  lines.push(`# QA Run Summary — ${runId}`);
-  lines.push("");
-  lines.push(
-    `**Session:** ${startedAt} → ${endedAt} (${duration})`,
-  );
-  lines.push(`**Controller:** v${CONTROLLER_VERSION}`);
-  lines.push("");
-  lines.push(`## Verdict`);
-  lines.push("");
-  lines.push(
-    `- ${featureResults.length} feature(s) attempted`,
-  );
-  lines.push(`- ${greens.length} green`);
-  lines.push(`- ${blocked.length} blocked`);
-  lines.push(`- ${violationsCount} violation(s) detected`);
-  lines.push("");
-
-  lines.push(`## Contract Integrity`);
-  lines.push("");
-  // Phase 3: the contract-hash-verify gate runs inside every attempt; we
-  // surface a simple summary based on whether any BLOCKED feature was
-  // caused by CONTRACT_TAMPERED.
-  const integrityBlocked = blocked.filter((f) =>
-    f.blockedReason?.includes("integrity breach"),
-  );
-  if (integrityBlocked.length === 0) {
-    lines.push(`- All contract hashes verified intact across all iterations ✅`);
-  } else {
-    lines.push(
-      `- ❌ ${integrityBlocked.length} feature(s) flagged CONTRACT_TAMPERED`,
-    );
-    for (const f of integrityBlocked) {
-      lines.push(`  - \`${f.featureId}\`: ${f.blockedReason}`);
+async function findUnclassifiedSources(
+  workingDir: string,
+  tiers: TierConfig,
+): Promise<string[]> {
+  const { classifyFile } = await import("./parsers/stryker-json.js");
+  const sources = await walkSources(workingDir);
+  const unclassified: string[] = [];
+  for (const path of sources) {
+    const rel = relative(workingDir, path).split("\\").join("/");
+    if (!classifyFile(rel, tiers)) {
+      unclassified.push(rel);
     }
   }
-  lines.push("");
-
-  if (baselineRecorded !== undefined || finalScore !== undefined) {
-    lines.push(`## Baseline → Final`);
-    lines.push("");
-    lines.push(`| Metric | Baseline | Final |`);
-    lines.push(`|---|---|---|`);
-    lines.push(
-      `| Overall mutation score | ${baselineRecorded ?? "n/a"} | ${finalScore ?? "n/a"} |`,
-    );
-    lines.push("");
-  }
-
-  lines.push(`## Features`);
-  lines.push("");
-  for (const f of featureResults) {
-    const emoji = f.finalOutcome === "GREEN" ? "🟢" : "🔴";
-    lines.push(
-      `### ${emoji} ${f.featureId} — ${f.finalOutcome} (${f.attempts.length} attempt(s))`,
-    );
-    lines.push("");
-    if (f.blockedReason) {
-      lines.push(`**Blocked reason:** ${f.blockedReason}`);
-      lines.push("");
-    }
-    lines.push(
-      `Last signature: \`${f.plateauBuffer[f.plateauBuffer.length - 1] ?? "n/a"}\``,
-    );
-    lines.push("");
-  }
-
-  if (violationsCount > 0) {
-    lines.push(`## Violations Detected`);
-    lines.push("");
-    lines.push(`See \`violations.jsonl\` in the run directory.`);
-    lines.push("");
-  }
-
-  lines.push(`## Next Actions`);
-  lines.push("");
-  for (const b of blocked) {
-    lines.push(
-      `- Review BLOCKED feature \`${b.featureId}\`: ${b.blockedReason ?? "unknown"}`,
-    );
-  }
-  if (blocked.length === 0 && greens.length > 0) {
-    lines.push(`- No blockers. Safe to continue.`);
-  }
-  if (integrityBlocked.length > 0) {
-    lines.push(
-      `- **Contract tamper** detected — investigate and rebase before next run.`,
-    );
-  }
-  lines.push("");
-  return lines.join("\n");
+  return unclassified;
 }
 
-function prettyDuration(startedAt: string, endedAt: string): string {
-  const ms = Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime());
-  const h = Math.floor(ms / 3600_000);
-  const m = Math.floor((ms % 3600_000) / 60_000);
-  const s = Math.floor((ms % 60_000) / 1000);
-  return `${h}h ${m}m ${s}s`;
+async function walkSources(root: string): Promise<string[]> {
+  const results: string[] = [];
+  const includeDirs = ["src", "app", "lib", "components", "pages"];
+  for (const dir of includeDirs) {
+    const abs = join(root, dir);
+    try {
+      await walkDir(abs, results);
+    } catch {
+      /* ignore */
+    }
+  }
+  return results;
+}
+
+async function walkDir(dir: string, out: string[]): Promise<void> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === "__snapshots__") continue;
+      await walkDir(full, out);
+    } else if (entry.isFile() && /\.(ts|tsx|js|jsx)$/.test(entry.name)) {
+      if (/\.(test|spec)\./.test(entry.name)) continue;
+      out.push(full);
+    }
+  }
 }
 
 async function defaultNotify(message: string): Promise<void> {
@@ -620,7 +1052,10 @@ async function defaultNotify(message: string): Promise<void> {
   const runCommand = defaultRunCommand();
   await runCommand(
     "osascript",
-    ["-e", `display notification "${message.replace(/"/g, '\\"')}" with title "QA"`],
+    [
+      "-e",
+      `display notification "${message.replace(/"/g, '\\"')}" with title "QA"`,
+    ],
     {},
   );
 }
@@ -647,6 +1082,7 @@ export function buildCli(): Command {
     .option("--category <category>", "run only features in this category")
     .option("--no-notification", "skip macOS notification + open")
     .option("--skip-baseline-stryker", "skip full Stryker baseline (dev)")
+    .option("--skip-release-gates", "skip session-end release gates (dev)")
     .action(async (opts) => {
       const result = await runSession({
         workingDir: process.cwd(),
@@ -654,18 +1090,105 @@ export function buildCli(): Command {
         ...(opts.category ? { category: opts.category as string } : {}),
         noNotification: opts.notification === false,
         skipBaselineStryker: Boolean(opts.skipBaselineStryker),
+        skipReleaseGates: Boolean(opts.skipReleaseGates),
       });
       process.stdout.write(`RUN ${result.runId}\n`);
       process.stdout.write(`summary: ${result.summaryPath}\n`);
       process.stdout.write(
-        `green=${result.featuresGreen.length} blocked=${result.featuresBlocked.length} violations=${result.violationsCount}\n`,
+        `green=${result.featuresGreen.length} blocked=${result.featuresBlocked.length} violations=${result.violationsCount}${result.releaseVerdict ? ` release=${result.releaseVerdict}` : ""}\n`,
       );
+    });
+
+  program
+    .command("baseline")
+    .description("Run full Stryker baseline and populate state.json")
+    .option("--module <path>", "single-module baseline refresh")
+    .action(async (opts) => {
+      await runBaseline({
+        workingDir: process.cwd(),
+        ...(opts.module ? { module: opts.module as string } : {}),
+      });
+      process.stdout.write("baseline complete\n");
+    });
+
+  program
+    .command("status")
+    .description("Show current state: features + modules + floors")
+    .action(async () => {
+      const report = await runStatus(process.cwd());
+      process.stdout.write(`last run: ${report.lastRunId ?? "<none>"}\n`);
+      process.stdout.write(
+        `features: ${report.features.green} green / ${report.features.blocked} blocked / ${report.features.pending} pending / ${report.features.in_progress} in-progress\n`,
+      );
+      const below = report.modules.filter((m) => m.belowFloor);
+      process.stdout.write(
+        `modules: ${report.modules.length} tracked, ${below.length} below floor\n`,
+      );
+      for (const m of below) {
+        process.stdout.write(
+          `  ${m.path} [${m.tier}]: ${m.baseline}% vs floor ${m.floor}%\n`,
+        );
+      }
+    });
+
+  program
+    .command("report [run-id]")
+    .description("List runs or print a specific run's summary.md")
+    .action(async (runId?: string) => {
+      if (runId) {
+        const md = await readRunSummary(process.cwd(), runId);
+        process.stdout.write(md);
+      } else {
+        const runs = await listRuns(process.cwd());
+        for (const r of runs) {
+          process.stdout.write(
+            `${r.runId}  ${r.summaryExists ? "✅" : "❌"} ${r.verdictLine ?? ""}\n`,
+          );
+        }
+      }
+    });
+
+  program
+    .command("doctor")
+    .description("Drift checks: services, contract hashes, tiers, providers")
+    .action(async () => {
+      const report = await runDoctor(process.cwd());
+      process.stdout.write(
+        `doctor: ${report.ok ? "OK" : "ISSUES FOUND"} (${report.issues.length})\n`,
+      );
+      for (const issue of report.issues) {
+        const icon = issue.severity === "error" ? "❌" : "⚠️ ";
+        process.stdout.write(`${icon} [${issue.check}] ${issue.message}\n`);
+      }
+      if (!report.ok) process.exitCode = 1;
+    });
+
+  program
+    .command("clean")
+    .description("Clear stale locks + archive runs older than retention")
+    .option("--retention-days <days>", "retain heavy artifacts for N days", "30")
+    .action(async (opts) => {
+      const result = await runClean({
+        workingDir: process.cwd(),
+        retentionDays: Number(opts.retentionDays),
+      });
+      process.stdout.write(
+        `clean: staleLockCleared=${result.staleLockCleared} archived=${result.archivedRuns.length} retained=${result.retainedRuns.length}\n`,
+      );
+    });
+
+  program
+    .command("unblock <feature>")
+    .description("Reset BLOCKED feature → pending")
+    .action(async (feature: string) => {
+      await runUnblock(process.cwd(), feature);
+      process.stdout.write(`feature ${feature} unblocked → pending\n`);
     });
 
   program
     .command("baseline-reset")
     .description("Explicit ratchet-down of a module baseline (audit-logged)")
-    .requiredOption("--module <path>", "module path (relative to repo root)")
+    .requiredOption("--module <path>", "module path")
     .requiredOption("--reason <text>", "reason for the reset")
     .requiredOption("--new-baseline <score>", "new baseline (0-100)")
     .option("--approved-by <user>", "approver name", process.env.USER ?? "unknown")
@@ -681,37 +1204,22 @@ export function buildCli(): Command {
     });
 
   program
-    .command("clean")
-    .description("Clear stale locks + compress runs older than retention")
-    .option("--retention-days <days>", "retain heavy artifacts for N days", "30")
-    .action(async (opts) => {
-      const result = await runClean({
-        workingDir: process.cwd(),
-        retentionDays: Number(opts.retentionDays),
-      });
+    .command("audit-violations")
+    .description("Aggregate violations.jsonl across all runs by pattern")
+    .action(async () => {
+      const report = await runAuditViolations(process.cwd());
       process.stdout.write(
-        `clean: staleLockCleared=${result.staleLockCleared} archived=${result.archivedRuns.length} retained=${result.retainedRuns.length}\n`,
+        `audit: ${report.totalViolations} violations across ${report.runsWithViolations}/${report.totalRuns} runs\n`,
       );
-    });
-
-  for (const stubName of [
-    "status",
-    "report",
-    "doctor",
-    "unblock",
-    "audit-violations",
-    "baseline",
-  ] as const) {
-    program
-      .command(stubName)
-      .description(`${stubName} (not yet implemented — Phase 5)`)
-      .allowUnknownOption()
-      .action(async () => {
+      const entries = Object.entries(report.byPattern).sort(
+        (a, b) => b[1].count - a[1].count,
+      );
+      for (const [pattern, info] of entries) {
         process.stdout.write(
-          `${stubName}: not yet implemented — Phase 5.\n`,
+          `  ${pattern}: ${info.count} occurrences across ${info.runs.length} run(s)\n`,
         );
-      });
-  }
+      }
+    });
 
   return program;
 }
@@ -723,12 +1231,11 @@ async function main(): Promise<void> {
   await cli.parseAsync(process.argv);
 }
 
-// Only run main when invoked as a script. When imported as a module, skip.
 const isMain = (() => {
   try {
     const invoked = resolve(process.argv[1] ?? "");
     const selfUrl = new URL(import.meta.url).pathname;
-    return invoked === selfUrl;
+    return invoked === decodeURIComponent(selfUrl);
   } catch {
     return false;
   }
@@ -736,7 +1243,12 @@ const isMain = (() => {
 
 if (isMain) {
   main().catch((err) => {
-    process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(
+      `error: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
     process.exit(1);
   });
 }
+
+// Silence unused — kept for callers that still import them.
+void readSessionLock;

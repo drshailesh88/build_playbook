@@ -7,13 +7,19 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   applyCategoryGate,
   buildCli,
-  buildSummary,
   generateRunId,
+  listRuns,
   loadAllContracts,
+  readRunSummary,
+  runAuditViolations,
   runBaselineReset,
   runClean,
+  runDoctor,
   runSession,
+  runStatus,
+  runUnblock,
 } from "./controller.js";
+import { renderSummary as buildSummary } from "./reports/summary-writer.js";
 import {
   applyMutationMeasurement,
   initializeState,
@@ -209,76 +215,257 @@ describe("generateRunId", () => {
   });
 });
 
-// ─── buildSummary ────────────────────────────────────────────────────────────
+// ─── renderSummary (re-exported as buildSummary for backwards-compat tests) ──
+// Note: the comprehensive summary-writer tests live in reports/summary-writer.test.ts.
+// These tests just verify the re-export + wiring through the controller.
 
-describe("buildSummary", () => {
-  test("contains the expected sections", () => {
+describe("summary-writer is exposed through controller wiring", () => {
+  test("renderSummary produces expected headers", () => {
     const md = buildSummary({
       runId: "run-abc",
       startedAt: "2026-04-14T21:30:00Z",
       endedAt: "2026-04-14T22:45:00Z",
+      controllerVersion: "0.1.0",
       featureResults: [],
+      violationEntries: [],
       state: initializeState("2026-04-14T21:30:00Z"),
-      baselineScore: 70,
-      violationsCount: 0,
+      baselineStrykerScore: 70,
     });
     expect(md).toContain("# QA Run Summary — run-abc");
     expect(md).toContain("## Verdict");
     expect(md).toContain("## Contract Integrity");
-    expect(md).toContain("## Features");
-    expect(md).toContain("## Next Actions");
+  });
+});
+
+// ─── new subcommand coverage ─────────────────────────────────────────────────
+
+describe("runStatus", () => {
+  test("returns counts + module list", async () => {
+    await writeTiers();
+    await fs.writeFile(
+      join(root, ".quality", "state.json"),
+      JSON.stringify({
+        schema_version: 1,
+        last_updated: "2026-04-14T22:00:00Z",
+        last_run_id: "run-1",
+        features: {
+          "auth-login": { status: "green", attempts_this_session: 0, plateau_buffer: [] },
+          "payment": { status: "blocked", attempts_this_session: 10, plateau_buffer: [] },
+        },
+        modules: {
+          "src/a.ts": {
+            tier: "critical_75",
+            mutation_baseline: 80,
+            mutation_baseline_set_at: "2026-04-14T22:00:00Z",
+            has_exceeded_floor: true,
+          },
+          "src/b.ts": {
+            tier: "critical_75",
+            mutation_baseline: 60,
+            mutation_baseline_set_at: "2026-04-14T22:00:00Z",
+            has_exceeded_floor: false,
+          },
+        },
+        baseline_reset_log: [],
+        test_count_history: { vitest_unit: [100], vitest_integration: [], playwright: [] },
+        runs: {},
+      }),
+    );
+    const report = await runStatus(root);
+    expect(report.lastRunId).toBe("run-1");
+    expect(report.features.green).toBe(1);
+    expect(report.features.blocked).toBe(1);
+    expect(report.modules).toHaveLength(2);
+    expect(report.modules.find((m) => m.path === "src/b.ts")?.belowFloor).toBe(true);
+    expect(report.testCountHistoryLatest.vitest_unit).toBe(100);
+  });
+});
+
+describe("listRuns + readRunSummary", () => {
+  test("lists runs that have summaries", async () => {
+    const runsDir = join(root, ".quality", "runs");
+    await fs.mkdir(join(runsDir, "run-001"), { recursive: true });
+    await fs.writeFile(
+      join(runsDir, "run-001", "summary.md"),
+      "# QA Run Summary — run-001\n\n**Status:** 🟢 1 GREEN\n",
+    );
+    await fs.mkdir(join(runsDir, "run-002"), { recursive: true });
+    // no summary.md for run-002
+
+    const runs = await listRuns(root);
+    expect(runs.map((r) => r.runId)).toEqual(["run-001", "run-002"]);
+    expect(runs[0]?.summaryExists).toBe(true);
+    expect(runs[0]?.verdictLine).toContain("GREEN");
+    expect(runs[1]?.summaryExists).toBe(false);
   });
 
-  test("flags CONTRACT_TAMPERED when a feature blocked with integrity reason", () => {
-    const md = buildSummary({
-      runId: "run-1",
-      startedAt: "2026-04-14T21:30:00Z",
-      endedAt: "2026-04-14T22:45:00Z",
-      featureResults: [
-        {
-          featureId: "auth-login",
-          finalOutcome: "BLOCKED",
-          attempts: [],
-          violationEntries: [],
-          state: initializeState("2026-04-14T21:30:00Z"),
-          plateauBuffer: [],
-          priorAttemptSummaries: [],
-          startedAt: "2026-04-14T21:30:00Z",
-          endedAt: "2026-04-14T21:31:00Z",
-          blockedReason: "integrity breach: contract-hash-verify failed",
-        },
-      ],
-      state: initializeState("2026-04-14T21:30:00Z"),
-      baselineScore: undefined,
-      violationsCount: 0,
-    });
-    expect(md).toContain("CONTRACT_TAMPERED");
-    expect(md).toContain("auth-login");
+  test("readRunSummary returns file contents", async () => {
+    const runsDir = join(root, ".quality", "runs");
+    await fs.mkdir(join(runsDir, "run-x"), { recursive: true });
+    await fs.writeFile(join(runsDir, "run-x", "summary.md"), "# hello");
+    const md = await readRunSummary(root, "run-x");
+    expect(md).toBe("# hello");
+  });
+});
+
+describe("runDoctor", () => {
+  test("no issues on clean project", async () => {
+    await writeTiers();
+    const report = await runDoctor(root);
+    expect(report.checked).toContain("contract-hashes");
+    expect(report.checked).toContain("tiers-coverage");
+    expect(report.checked).toContain("providers-policy");
   });
 
-  test("happy path says all hashes intact", () => {
-    const md = buildSummary({
-      runId: "run-1",
-      startedAt: "2026-04-14T21:30:00Z",
-      endedAt: "2026-04-14T22:45:00Z",
-      featureResults: [
-        {
-          featureId: "auth-login",
-          finalOutcome: "GREEN",
-          attempts: [],
-          violationEntries: [],
-          state: initializeState("2026-04-14T21:30:00Z"),
-          plateauBuffer: [],
-          priorAttemptSummaries: [],
-          startedAt: "2026-04-14T21:30:00Z",
-          endedAt: "2026-04-14T22:45:00Z",
+  test("flags tampered contract hash", async () => {
+    await writeTiers();
+    await writeContractOnDisk("auth", makeContract("auth"));
+    // Tamper the artifact.
+    await fs.writeFile(
+      join(root, ".quality", "contracts", "auth", "examples.md"),
+      "TAMPERED",
+    );
+    const report = await runDoctor(root);
+    const hashIssues = report.issues.filter((i) => i.check === "contract-hashes");
+    expect(hashIssues.length).toBeGreaterThan(0);
+    expect(hashIssues[0]?.severity).toBe("error");
+    expect(report.ok).toBe(false);
+  });
+
+  test("flags unclassified source files", async () => {
+    await writeTiers();
+    await fs.mkdir(join(root, "src"), { recursive: true });
+    // A source file that DOESN'T match any tier glob.
+    await fs.writeFile(join(root, "src", "orphan.ts"), "export const x = 1;");
+
+    // Override tiers to not match orphan.ts.
+    await fs.writeFile(
+      join(root, ".quality", "policies", "tiers.yaml"),
+      yaml.dump({
+        schema_version: 1,
+        tiers: {
+          critical_75: ["src/auth/**"],
+          business_60: [],
+          ui_gates_only: [],
         },
+        unclassified_behavior: "fail_fast",
+      }),
+    );
+    const report = await runDoctor(root);
+    const tierIssues = report.issues.filter((i) => i.check === "tiers-coverage");
+    expect(tierIssues.length).toBeGreaterThan(0);
+  });
+});
+
+describe("runUnblock", () => {
+  test("transitions blocked → pending + clears plateau buffer", async () => {
+    await writeTiers();
+    await fs.writeFile(
+      join(root, ".quality", "state.json"),
+      JSON.stringify({
+        schema_version: 1,
+        last_updated: "2026-04-14T22:00:00Z",
+        features: {
+          "auth-login": {
+            status: "blocked",
+            blocked_at: "2026-04-14T22:00:00Z",
+            blocked_reason: "plateau",
+            blocked_signature: "abc",
+            attempts_this_session: 10,
+            plateau_buffer: ["sig", "sig", "sig"],
+          },
+        },
+        modules: {},
+        baseline_reset_log: [],
+        test_count_history: { vitest_unit: [], vitest_integration: [], playwright: [] },
+        runs: {},
+      }),
+    );
+    await runUnblock(root, "auth-login");
+    const updated = JSON.parse(
+      await fs.readFile(join(root, ".quality", "state.json"), "utf8"),
+    );
+    expect(updated.features["auth-login"].status).toBe("pending");
+    expect(updated.features["auth-login"].plateau_buffer).toEqual([]);
+    expect(updated.features["auth-login"].attempts_this_session).toBe(0);
+  });
+
+  test("throws on unknown feature", async () => {
+    await fs.writeFile(
+      join(root, ".quality", "state.json"),
+      JSON.stringify({
+        schema_version: 1,
+        last_updated: "2026-04-14T22:00:00Z",
+        features: {},
+        modules: {},
+        baseline_reset_log: [],
+        test_count_history: { vitest_unit: [], vitest_integration: [], playwright: [] },
+        runs: {},
+      }),
+    );
+    await expect(runUnblock(root, "missing")).rejects.toThrow(/not found/);
+  });
+
+  test("throws on non-blocked feature", async () => {
+    await fs.writeFile(
+      join(root, ".quality", "state.json"),
+      JSON.stringify({
+        schema_version: 1,
+        last_updated: "2026-04-14T22:00:00Z",
+        features: {
+          "auth-login": { status: "green", attempts_this_session: 0, plateau_buffer: [] },
+        },
+        modules: {},
+        baseline_reset_log: [],
+        test_count_history: { vitest_unit: [], vitest_integration: [], playwright: [] },
+        runs: {},
+      }),
+    );
+    await expect(runUnblock(root, "auth-login")).rejects.toThrow(/not blocked/);
+  });
+});
+
+describe("runAuditViolations", () => {
+  test("empty when no runs", async () => {
+    const report = await runAuditViolations(root);
+    expect(report.totalRuns).toBe(0);
+    expect(report.totalViolations).toBe(0);
+  });
+
+  test("aggregates violations across multiple runs by pattern", async () => {
+    const runsDir = join(root, ".quality", "runs");
+    await fs.mkdir(join(runsDir, "run-001"), { recursive: true });
+    await fs.mkdir(join(runsDir, "run-002"), { recursive: true });
+
+    const ventry = (runId: string, patternId: string) => ({
+      run_id: runId,
+      feature_id: "auth-login",
+      attempt: 1,
+      detected_at: "2026-04-14T22:00:00Z",
+      provider: "claude",
+      violations: [
+        { pattern_id: patternId, severity: "reject", file: "x.test.ts", detected_at: "2026-04-14T22:00:00Z" },
       ],
-      state: initializeState("2026-04-14T21:30:00Z"),
-      baselineScore: undefined,
-      violationsCount: 0,
+      reverted_paths: [],
     });
-    expect(md).toContain("All contract hashes verified intact");
+    await fs.writeFile(
+      join(runsDir, "run-001", "violations.jsonl"),
+      [
+        JSON.stringify(ventry("run-001", "SKIP_ADDED")),
+        JSON.stringify(ventry("run-001", "SKIP_ADDED")),
+      ].join("\n"),
+    );
+    await fs.writeFile(
+      join(runsDir, "run-002", "violations.jsonl"),
+      JSON.stringify(ventry("run-002", "EXPECT_REMOVED_NET")),
+    );
+
+    const report = await runAuditViolations(root);
+    expect(report.totalRuns).toBe(2);
+    expect(report.runsWithViolations).toBe(2);
+    expect(report.totalViolations).toBe(3);
+    expect(report.byPattern["SKIP_ADDED"]?.count).toBe(2);
+    expect(report.byPattern["EXPECT_REMOVED_NET"]?.count).toBe(1);
   });
 });
 
@@ -464,6 +651,7 @@ describe("runSession — empty contracts → clean session", () => {
         return { exitCode: 0, stdout: "", stderr: "", durationMs: 5, timedOut: false };
       },
       skipBaselineStryker: true,
+      skipReleaseGates: true,
       noNotification: true,
     });
     expect(result.runId).toBe("run-test-2");
