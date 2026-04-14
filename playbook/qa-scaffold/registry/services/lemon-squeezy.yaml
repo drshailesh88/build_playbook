@@ -1,0 +1,35 @@
+name: lemon-squeezy
+display_name: "Lemon Squeezy (Merchant of Record)"
+category_hint: payments
+status: draft
+
+detection:
+  package_patterns:
+    - "@lemonsqueezy/lemonsqueezy.js"
+    - "lemonsqueezy"
+  env_patterns:
+    - "LEMONSQUEEZY_*"
+    - "LEMON_*"
+
+env_test_vars:
+  required:
+    - name: LEMONSQUEEZY_API_KEY_TEST
+      description: "Lemon Squeezy test-mode API key"
+    - name: LEMONSQUEEZY_STORE_ID_TEST
+  optional:
+    - name: LEMONSQUEEZY_WEBHOOK_SECRET_TEST
+
+snippets:
+  auto_install_dev_packages:
+    - "msw"
+
+tier_hints:
+  critical_75:
+    - "src/**/payments/**"
+    - "src/**/billing/**"
+    - "app/**/api/lemon*/**"
+    - "app/**/api/webhooks/lemon*/**"
+
+documentation_url: "https://docs.lemonsqueezy.com/guides/developer-guide"
+
+# Status: draft — validate on first use.

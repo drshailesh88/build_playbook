@@ -1,0 +1,38 @@
+name: sentry
+display_name: "Sentry (Error Monitoring)"
+category_hint: business_logic
+status: draft
+
+detection:
+  package_patterns:
+    - "@sentry/nextjs"
+    - "@sentry/node"
+    - "@sentry/react"
+  env_patterns:
+    - "SENTRY_*"
+    - "NEXT_PUBLIC_SENTRY_*"
+
+env_test_vars:
+  required: []
+  optional:
+    - name: SENTRY_DSN_TEST
+      description: "Only needed if you verify events reach Sentry; usually skipped"
+    - name: SENTRY_AUTH_TOKEN
+      description: "Required for source-map uploads during release builds"
+
+snippets: {}
+
+tier_hints:
+  business_60:
+    - "sentry.client.config.ts"
+    - "sentry.server.config.ts"
+    - "sentry.edge.config.ts"
+
+documentation_url: "https://docs.sentry.io/platforms/javascript/guides/nextjs/"
+
+security_notes: |
+  Disable Sentry in the QA loop (NODE_ENV=test short-circuits most setups).
+  Do not ship live DSN in test env — flooding error tracking with synthetic
+  failures is wasteful.
+
+# Status: draft — validate on first use.

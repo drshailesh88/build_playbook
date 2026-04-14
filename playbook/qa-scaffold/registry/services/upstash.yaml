@@ -1,0 +1,40 @@
+name: upstash
+display_name: "Upstash (Redis / Kafka)"
+category_hint: business_logic
+status: draft
+
+detection:
+  package_patterns:
+    - "@upstash/redis"
+    - "@upstash/ratelimit"
+    - "@upstash/kafka"
+    - "@upstash/qstash"
+  env_patterns:
+    - "UPSTASH_*"
+
+env_test_vars:
+  required:
+    - name: UPSTASH_REDIS_REST_URL_TEST
+    - name: UPSTASH_REDIS_REST_TOKEN_TEST
+  optional:
+    - name: UPSTASH_KAFKA_REST_URL
+    - name: UPSTASH_KAFKA_REST_USERNAME
+    - name: UPSTASH_KAFKA_REST_PASSWORD
+
+snippets: {}
+
+tier_hints:
+  critical_75:
+    - "src/**/rate-limit/**"
+    - "src/**/cache/**"
+  business_60:
+    - "src/**/queue/**"
+    - "src/**/jobs/**"
+
+documentation_url: "https://upstash.com/docs/redis/sdks/ts/overview"
+
+security_notes: |
+  Use a dedicated Upstash Redis instance for tests — FLUSHDB between runs
+  is destructive. Never point tests at production DBs.
+
+# Status: draft — validate on first use.

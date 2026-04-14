@@ -1,0 +1,40 @@
+name: prisma-postgres
+display_name: "Prisma ORM + Postgres"
+category_hint: user_data
+status: draft
+
+detection:
+  package_patterns:
+    - "@prisma/client"
+    - "prisma"
+  env_patterns:
+    - "DATABASE_URL*"
+    - "POSTGRES_*"
+
+env_test_vars:
+  required:
+    - name: DATABASE_URL_TEST
+      description: "Postgres URL for the test database"
+  optional:
+    - name: DIRECT_URL_TEST
+      description: "Direct (non-pooled) URL for migrations"
+
+snippets: {}
+
+tier_hints:
+  critical_75:
+    - "prisma/schema.prisma"
+    - "src/**/db/**"
+    - "src/**/database/**"
+    - "src/**/prisma/**"
+  business_60:
+    - "src/**/queries/**"
+    - "src/**/repositories/**"
+
+documentation_url: "https://www.prisma.io/docs/orm/overview/databases/postgresql"
+
+security_notes: |
+  Run `prisma migrate reset --skip-seed` before the test run to ensure a
+  clean schema. DATABASE_URL_TEST must point at a dedicated test database.
+
+# Status: draft — validate on first use.

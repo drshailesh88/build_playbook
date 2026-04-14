@@ -1,0 +1,50 @@
+name: drizzle-postgres
+display_name: "Drizzle ORM + Postgres"
+category_hint: user_data
+status: validated
+
+detection:
+  package_patterns:
+    - "drizzle-orm"
+    - "drizzle-kit"
+    - "@neondatabase/serverless"
+    - "pg"
+    - "postgres"
+  env_patterns:
+    - "DATABASE_URL*"
+    - "POSTGRES_*"
+
+env_test_vars:
+  required:
+    - name: DATABASE_URL_TEST
+      description: "Postgres connection URL for a dedicated test database (NOT prod)"
+  optional:
+    - name: TEST_DATABASE_SEED_STRATEGY
+      description: "truncate | migrate-fresh | snapshot (default: truncate)"
+
+snippets:
+  scripts:
+    - path: scripts/qa/reset-test-db.ts
+      source: snippets/scripts/reset-test-db.ts
+  auto_install_dev_packages: []
+
+tier_hints:
+  critical_75:
+    - "src/**/db/**"
+    - "src/**/database/**"
+    - "src/**/schema.ts"
+    - "src/**/schema/**"
+    - "src/**/migrations/**"
+    - "drizzle/**"
+  business_60:
+    - "src/**/queries/**"
+    - "src/**/repositories/**"
+
+documentation_url: "https://orm.drizzle.team/docs/overview"
+
+security_notes: |
+  - DATABASE_URL_TEST MUST point at a test database, never production.
+  - Prefer local Postgres over Neon cloud for tests — lower latency + cost.
+    Neon is just Postgres under the hood, so behavior matches.
+  - reset-test-db.ts runs TRUNCATE ... CASCADE before each iteration. Seed
+    fixtures live in scripts/qa/seed-test-users.ts or similar.

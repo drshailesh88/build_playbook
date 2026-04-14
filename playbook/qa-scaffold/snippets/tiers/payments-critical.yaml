@@ -1,0 +1,14 @@
+# Payments-related paths that should always be critical_75 tier.
+# Merged into .quality/policies/tiers.yaml by the installer when any payment
+# service is detected (Stripe, Razorpay, Lemon Squeezy, etc.).
+critical_75:
+  - "src/**/payments/**"
+  - "src/**/billing/**"
+  - "src/**/checkout/**"
+  - "src/**/subscriptions/**"
+  - "app/**/api/payments/**"
+  - "app/**/api/billing/**"
+  - "app/**/api/checkout/**"
+  - "app/**/api/webhooks/stripe/**"
+  - "app/**/api/webhooks/razorpay/**"
+  - "app/**/api/webhooks/lemon*/**"

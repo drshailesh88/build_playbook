@@ -1,0 +1,41 @@
+name: supabase
+display_name: "Supabase (DB + Auth + Storage)"
+category_hint: user_data
+status: draft
+
+detection:
+  package_patterns:
+    - "@supabase/supabase-js"
+    - "@supabase/ssr"
+    - "@supabase/auth-helpers-nextjs"
+  env_patterns:
+    - "SUPABASE_*"
+    - "NEXT_PUBLIC_SUPABASE_*"
+
+env_test_vars:
+  required:
+    - name: NEXT_PUBLIC_SUPABASE_URL
+    - name: NEXT_PUBLIC_SUPABASE_ANON_KEY
+    - name: SUPABASE_SERVICE_ROLE_KEY_TEST
+      description: "Service-role key for the TEST project only"
+  optional:
+    - name: E2E_TEST_USER_EMAIL
+    - name: E2E_TEST_USER_PASSWORD
+
+snippets: {}
+
+tier_hints:
+  critical_75:
+    - "src/**/auth/**"
+    - "src/**/supabase/**"
+    - "src/**/db/**"
+    - "app/**/api/auth/**"
+    - "middleware.ts"
+
+documentation_url: "https://supabase.com/docs/guides/local-development"
+
+security_notes: |
+  Prefer `supabase start` (local) over a cloud test project. Never commit
+  the service-role key — it bypasses RLS.
+
+# Status: draft — validate on first use.

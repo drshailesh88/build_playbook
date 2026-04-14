@@ -1,0 +1,48 @@
+name: razorpay
+display_name: "Razorpay (Payments — India)"
+category_hint: payments
+status: validated
+
+detection:
+  package_patterns:
+    - "razorpay"
+    - "@razorpay/*"
+  env_patterns:
+    - "RAZORPAY_*"
+
+env_test_vars:
+  required:
+    - name: RAZORPAY_KEY_ID_TEST
+      description: "Razorpay test key ID (rzp_test_...)"
+    - name: RAZORPAY_KEY_SECRET_TEST
+      description: "Razorpay test key secret"
+  optional:
+    - name: RAZORPAY_WEBHOOK_SECRET_TEST
+      description: "HMAC secret used to verify replayed webhook payloads in tests"
+    - name: E2E_TEST_CARD_NUMBER
+      description: "Test card (default: 4111 1111 1111 1111)"
+    - name: E2E_TEST_CARD_CVV
+    - name: E2E_TEST_CARD_EXPIRY
+
+snippets:
+  mocks:
+    - snippets/mocks/razorpay-webhook.ts
+  auto_install_dev_packages:
+    - "msw"
+
+tier_hints:
+  critical_75:
+    - "src/**/payments/**"
+    - "src/**/billing/**"
+    - "app/**/api/payments/**"
+    - "app/**/api/razorpay/**"
+    - "app/**/api/webhooks/razorpay/**"
+
+documentation_url: "https://razorpay.com/docs/payments/test-card-details/"
+
+security_notes: |
+  - Razorpay test mode uses the same API base URL with separate keys.
+  - Webhooks do NOT reliably reach localhost without a tunnel (ngrok etc.).
+    The MSW handler replays saved webhook payloads for webhook-verification
+    tests. For happy-path checkout, use the real test-mode redirect.
+  - Never commit rzp_live_* keys. Never use live keys in .env.test.

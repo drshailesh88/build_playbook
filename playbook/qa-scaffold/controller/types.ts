@@ -286,6 +286,15 @@ export const ServiceManifestSchema = z.object({
   snippets: z
     .object({
       global_setup: z.string().optional(),
+      mocks: z.array(z.string()).optional(),
+      scripts: z
+        .array(
+          z.object({
+            path: z.string().min(1),
+            source: z.string().min(1),
+          }),
+        )
+        .optional(),
       auto_install_dev_packages: z.array(z.string()).default([]),
       playwright_config_patches: z
         .array(

@@ -1,0 +1,39 @@
+name: nextauth
+display_name: "NextAuth.js (Authentication)"
+category_hint: auth
+status: draft
+
+detection:
+  package_patterns:
+    - "next-auth"
+  env_patterns:
+    - "NEXTAUTH_*"
+    - "AUTH_*"
+
+env_test_vars:
+  required:
+    - name: NEXTAUTH_SECRET_TEST
+      description: "Random 32+ byte secret (openssl rand -base64 32)"
+    - name: NEXTAUTH_URL
+      description: "http://localhost:3000 (Playwright base URL)"
+  optional:
+    - name: E2E_TEST_USER_EMAIL
+    - name: E2E_TEST_USER_PASSWORD
+
+snippets:
+  global_setup: snippets/global-setup/nextauth.ts
+
+tier_hints:
+  critical_75:
+    - "src/**/auth/**"
+    - "app/api/auth/[...nextauth]/**"
+    - "middleware.ts"
+
+documentation_url: "https://next-auth.js.org/getting-started/example"
+
+security_notes: |
+  NextAuth v4 legacy. For v5 (Auth.js), use the authjs manifest instead.
+  Credentials provider is assumed; if you use OAuth providers, the E2E tests
+  will need stubbed OAuth endpoints.
+
+# Status: draft — validate on first use in a real NextAuth app.

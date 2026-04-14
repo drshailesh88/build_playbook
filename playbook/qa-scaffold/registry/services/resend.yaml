@@ -1,0 +1,38 @@
+name: resend
+display_name: "Resend (Transactional Email)"
+category_hint: business_logic
+status: draft
+
+detection:
+  package_patterns:
+    - "resend"
+    - "@resend/node"
+  env_patterns:
+    - "RESEND_*"
+
+env_test_vars:
+  required: []
+  optional:
+    - name: RESEND_API_KEY_TEST
+      description: "Only needed for real-send tests; MSW handles mocked sends"
+
+snippets:
+  mocks:
+    - snippets/mocks/resend-email.ts
+  auto_install_dev_packages:
+    - "msw"
+
+tier_hints:
+  business_60:
+    - "src/**/email/**"
+    - "src/**/notifications/**"
+    - "app/**/api/email/**"
+
+documentation_url: "https://resend.com/docs/send-with-nodejs"
+
+security_notes: |
+  Email sends in E2E should be MSW-intercepted — delivering to a real inbox
+  is flaky and slow. Only hit the real Resend API in a dedicated release-
+  smoke test, not the QA loop.
+
+# Status: draft — validate on first use.

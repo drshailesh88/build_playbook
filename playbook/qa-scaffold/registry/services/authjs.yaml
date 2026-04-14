@@ -1,0 +1,41 @@
+name: authjs
+display_name: "Auth.js (NextAuth v5)"
+category_hint: auth
+status: draft
+
+detection:
+  package_patterns:
+    - "@auth/core"
+    - "@auth/nextjs"
+    - "@auth/drizzle-adapter"
+    - "@auth/prisma-adapter"
+  env_patterns:
+    - "AUTH_*"
+
+env_test_vars:
+  required:
+    - name: AUTH_SECRET
+      description: "Auth.js secret (openssl rand -base64 32)"
+  optional:
+    - name: AUTH_URL
+    - name: E2E_TEST_USER_EMAIL
+    - name: E2E_TEST_USER_PASSWORD
+
+snippets:
+  global_setup: snippets/global-setup/nextauth.ts
+
+tier_hints:
+  critical_75:
+    - "src/**/auth/**"
+    - "app/api/auth/**"
+    - "auth.ts"
+    - "auth.config.ts"
+    - "middleware.ts"
+
+documentation_url: "https://authjs.dev/getting-started/installation"
+
+security_notes: |
+  Auth.js v5 canonical env is AUTH_* (not NEXTAUTH_*). Never commit
+  AUTH_SECRET to git.
+
+# Status: draft — validate on first use in a real Auth.js app.

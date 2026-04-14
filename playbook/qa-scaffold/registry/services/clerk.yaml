@@ -1,0 +1,54 @@
+name: clerk
+display_name: "Clerk (Authentication)"
+category_hint: auth
+status: validated
+
+detection:
+  package_patterns:
+    - "@clerk/nextjs"
+    - "@clerk/testing"
+    - "@clerk/clerk-react"
+    - "@clerk/backend"
+  env_patterns:
+    - "CLERK_*"
+    - "NEXT_PUBLIC_CLERK_*"
+
+env_test_vars:
+  required:
+    - name: CLERK_SECRET_KEY
+      description: "Clerk test instance secret key (sk_test_...)"
+    - name: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+      description: "Clerk test publishable key (pk_test_...)"
+    - name: E2E_CLERK_USER_USERNAME
+      description: "Primary test user email"
+    - name: E2E_CLERK_USER_PASSWORD
+      description: "Primary test user password"
+  optional:
+    - name: E2E_CLERK_ADMIN_USERNAME
+      description: "Admin/elevated-role test user"
+    - name: E2E_CLERK_ADMIN_PASSWORD
+    - name: CLERK_TESTING_TOKEN
+      description: "Required for bot detection bypass in automation"
+
+snippets:
+  global_setup: snippets/global-setup/clerk.ts
+  auto_install_dev_packages:
+    - "@clerk/testing"
+  playwright_config_patches:
+    - path: globalSetup
+      value: "./tests/global-setup.ts"
+
+tier_hints:
+  critical_75:
+    - "src/**/auth/**"
+    - "app/**/api/auth/**"
+    - "middleware.ts"
+    - "src/middleware.ts"
+
+documentation_url: "https://clerk.com/docs/testing/playwright/overview"
+
+security_notes: |
+  - Session state is saved to playwright/.clerk/user.json — add to .gitignore
+  - Use Testing Tokens to bypass bot detection in CI; set CLERK_TESTING_TOKEN
+    via Clerk Dashboard → Configure → Testing Tokens
+  - NEVER commit sk_test_* or pk_test_* keys to git; store in .env.test only

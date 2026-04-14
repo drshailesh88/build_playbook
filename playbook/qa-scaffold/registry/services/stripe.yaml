@@ -1,0 +1,47 @@
+name: stripe
+display_name: "Stripe (Payments)"
+category_hint: payments
+status: draft
+
+detection:
+  package_patterns:
+    - "stripe"
+    - "@stripe/stripe-js"
+    - "@stripe/react-stripe-js"
+  env_patterns:
+    - "STRIPE_*"
+
+env_test_vars:
+  required:
+    - name: STRIPE_SECRET_KEY_TEST
+      description: "Stripe test secret key (sk_test_...)"
+    - name: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+      description: "Stripe test publishable key (pk_test_...)"
+  optional:
+    - name: STRIPE_WEBHOOK_SECRET_TEST
+      description: "whsec_* for local webhook verification via Stripe CLI"
+    - name: E2E_TEST_CARD_NUMBER
+      description: "default: 4242 4242 4242 4242"
+
+snippets:
+  mocks:
+    - snippets/mocks/stripe-webhook.ts
+  auto_install_dev_packages:
+    - "msw"
+
+tier_hints:
+  critical_75:
+    - "src/**/payments/**"
+    - "src/**/billing/**"
+    - "app/**/api/stripe/**"
+    - "app/**/api/webhooks/stripe/**"
+    - "app/**/api/checkout/**"
+
+documentation_url: "https://stripe.com/docs/testing"
+
+security_notes: |
+  For webhook testing in CI, use `stripe listen` with the CLI. For local
+  E2E, MSW replays saved events (see snippets/mocks/stripe-webhook.ts).
+  Never commit sk_live_* or whsec_live_* keys.
+
+# Status: draft — validate on first use in a real Stripe app.

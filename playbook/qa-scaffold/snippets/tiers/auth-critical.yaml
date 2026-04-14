@@ -1,0 +1,13 @@
+# Auth-related paths that should always be critical_75 tier.
+# Merged into .quality/policies/tiers.yaml by the installer when any auth
+# service is detected (Clerk, NextAuth, Auth.js, Supabase, etc.).
+critical_75:
+  - "src/**/auth/**"
+  - "src/**/authentication/**"
+  - "src/**/session/**"
+  - "app/**/api/auth/**"
+  - "app/api/auth/**"
+  - "middleware.ts"
+  - "src/middleware.ts"
+  - "auth.ts"
+  - "auth.config.ts"

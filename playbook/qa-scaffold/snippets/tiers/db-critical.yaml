@@ -1,0 +1,15 @@
+# Database-related paths that should always be critical_75 tier.
+# Merged into .quality/policies/tiers.yaml by the installer when any DB layer
+# is detected (Drizzle, Prisma, Supabase client, etc.).
+critical_75:
+  - "src/**/db/**"
+  - "src/**/database/**"
+  - "src/**/schema.ts"
+  - "src/**/schema/**"
+  - "src/**/migrations/**"
+  - "drizzle/**"
+  - "prisma/schema.prisma"
+business_60:
+  - "src/**/queries/**"
+  - "src/**/repositories/**"
+  - "src/**/dao/**"
