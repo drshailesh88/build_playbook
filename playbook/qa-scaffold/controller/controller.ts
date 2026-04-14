@@ -649,21 +649,23 @@ export async function runDoctor(workingDir: string): Promise<DoctorReport> {
 
   // 3. Tiers coverage (6b.iii fail-fast — unclassified source files)
   checked.push("tiers-coverage");
-  const tierConfig = await loadTierConfig(policiesDir).catch(() => null);
-  if (tierConfig) {
-    const unclassified = await findUnclassifiedSources(workingDir, tierConfig);
-    for (const path of unclassified.slice(0, 10)) {
+  const { runClassifyCheck } = await import("./classify-checker.js");
+  const classifyResult = await runClassifyCheck({ workingDir }).catch(
+    () => null,
+  );
+  if (classifyResult && !classifyResult.ok) {
+    for (const path of classifyResult.unclassified.slice(0, 10)) {
       issues.push({
         check: "tiers-coverage",
         severity: "error",
         message: `Unclassified source file: ${path} (no tiers.yaml glob matched)`,
       });
     }
-    if (unclassified.length > 10) {
+    if (classifyResult.unclassified.length > 10) {
       issues.push({
         check: "tiers-coverage",
         severity: "error",
-        message: `...and ${unclassified.length - 10} more unclassified files`,
+        message: `...and ${classifyResult.unclassified.length - 10} more unclassified files`,
       });
     }
   }
@@ -1003,49 +1005,8 @@ async function runFullStrykerBaseline(
   }
 }
 
-async function findUnclassifiedSources(
-  workingDir: string,
-  tiers: TierConfig,
-): Promise<string[]> {
-  const { classifyFile } = await import("./parsers/stryker-json.js");
-  const sources = await walkSources(workingDir);
-  const unclassified: string[] = [];
-  for (const path of sources) {
-    const rel = relative(workingDir, path).split("\\").join("/");
-    if (!classifyFile(rel, tiers)) {
-      unclassified.push(rel);
-    }
-  }
-  return unclassified;
-}
-
-async function walkSources(root: string): Promise<string[]> {
-  const results: string[] = [];
-  const includeDirs = ["src", "app", "lib", "components", "pages"];
-  for (const dir of includeDirs) {
-    const abs = join(root, dir);
-    try {
-      await walkDir(abs, results);
-    } catch {
-      /* ignore */
-    }
-  }
-  return results;
-}
-
-async function walkDir(dir: string, out: string[]): Promise<void> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "node_modules" || entry.name === "__snapshots__") continue;
-      await walkDir(full, out);
-    } else if (entry.isFile() && /\.(ts|tsx|js|jsx)$/.test(entry.name)) {
-      if (/\.(test|spec)\./.test(entry.name)) continue;
-      out.push(full);
-    }
-  }
-}
+// Unclassified-source walking moved to classify-checker.ts.
+// qa-doctor and the classify-check command both delegate to it.
 
 async function defaultNotify(message: string): Promise<void> {
   if (process.platform !== "darwin") return;
