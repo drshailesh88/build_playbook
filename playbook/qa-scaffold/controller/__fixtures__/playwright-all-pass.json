@@ -1,0 +1,47 @@
+{
+  "config": {
+    "rootDir": "/repo",
+    "projects": [{ "name": "chromium" }]
+  },
+  "stats": {
+    "expected": 2,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration": 3420
+  },
+  "suites": [
+    {
+      "title": "tests/e2e/auth.spec.ts",
+      "file": "tests/e2e/auth.spec.ts",
+      "specs": [
+        {
+          "title": "user can log in",
+          "file": "tests/e2e/auth.spec.ts",
+          "ok": true,
+          "tests": [
+            {
+              "projectName": "chromium",
+              "results": [
+                { "status": "passed", "duration": 1520, "retry": 0 }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "user can log out",
+          "file": "tests/e2e/auth.spec.ts",
+          "ok": true,
+          "tests": [
+            {
+              "projectName": "chromium",
+              "results": [
+                { "status": "passed", "duration": 1900, "retry": 0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

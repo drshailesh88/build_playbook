@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "mutants": {
+    "src/auth/login.ts": {
+      "1": "Killed",
+      "2": "Killed",
+      "3": "Killed",
+      "4": "Survived",
+      "5": "Timeout"
+    },
+    "src/components/Button.tsx": {
+      "1": "Killed",
+      "2": "Survived"
+    }
+  }
+}

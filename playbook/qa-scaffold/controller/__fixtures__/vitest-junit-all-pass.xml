@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="0" errors="0" time="0.45">
+    <testsuite name="src/lib/math.test.ts" timestamp="2026-04-14T22:00:00Z" hostname="host" tests="3" failures="0" errors="0" skipped="0" time="0.45" file="src/lib/math.test.ts">
+        <testcase classname="math" name="add > handles positives" time="0.12"/>
+        <testcase classname="math" name="add > handles negatives" time="0.15"/>
+        <testcase classname="math" name="multiply > is commutative" time="0.18"/>
+    </testsuite>
+</testsuites>

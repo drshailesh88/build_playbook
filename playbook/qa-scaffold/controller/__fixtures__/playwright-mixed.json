@@ -1,0 +1,93 @@
+{
+  "config": { "rootDir": "/repo" },
+  "stats": {
+    "expected": 4,
+    "unexpected": 1,
+    "flaky": 1,
+    "skipped": 1,
+    "duration": 12000
+  },
+  "suites": [
+    {
+      "title": "tests/e2e/checkout.spec.ts",
+      "file": "tests/e2e/checkout.spec.ts",
+      "suites": [
+        {
+          "title": "describe: mobile",
+          "file": "tests/e2e/checkout.spec.ts",
+          "specs": [
+            {
+              "title": "pay button renders",
+              "file": "tests/e2e/checkout.spec.ts",
+              "tests": [
+                {
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "status": "timedOut",
+                      "duration": 30000,
+                      "retry": 0,
+                      "error": {
+                        "message": "Test timeout of 30000ms exceeded",
+                        "stack": "Error: Test timeout\n  at checkout.spec.ts:42"
+                      },
+                      "attachments": [
+                        { "name": "trace", "path": "/tmp/trace.zip", "contentType": "application/zip" },
+                        { "name": "screenshot", "path": "/tmp/shot.png", "contentType": "image/png" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "specs": [
+        {
+          "title": "applies coupon",
+          "file": "tests/e2e/checkout.spec.ts",
+          "tests": [
+            {
+              "projectName": "chromium",
+              "results": [
+                { "status": "failed", "duration": 800, "retry": 0, "error": { "message": "oops" } },
+                { "status": "passed", "duration": 1200, "retry": 1 }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "deferred for later",
+          "file": "tests/e2e/checkout.spec.ts",
+          "tests": [
+            {
+              "projectName": "chromium",
+              "results": [{ "status": "skipped", "duration": 0, "retry": 0 }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "tests/e2e/profile.spec.ts",
+      "file": "tests/e2e/profile.spec.ts",
+      "specs": [
+        {
+          "title": "shows user name",
+          "file": "tests/e2e/profile.spec.ts",
+          "tests": [
+            {
+              "projectName": "chromium",
+              "results": [{ "status": "passed", "duration": 500, "retry": 0 }]
+            },
+            {
+              "projectName": "Mobile Safari",
+              "results": [{ "status": "passed", "duration": 620, "retry": 0 }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
