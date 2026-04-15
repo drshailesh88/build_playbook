@@ -34,10 +34,11 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:prd-to-linear` — Skip GSD, break PRD directly into Linear issues
 - `/gsd:discuss-phase N`, `/gsd:plan-phase N`, `/gsd:execute-phase N`, `/gsd:quick "task"` — Execute one phase at a time
 
-### Ralph path — autonomous overnight loop (external)
-- `/playbook:prd-to-ralph` — Convert the PRD + grilling decisions into Huntley's exact `prd.json` format (flat array with id, category, description, page, ui_details, behavior, data_model, priority, core, passes, tests.{unit,e2e,edge_cases}). After this, you're ready for Ralph.
-- Ralph itself is **external** — pull [github.com/ghuntley/ralph-to-ralph-prod](https://github.com/ghuntley/ralph-to-ralph-prod) into your target app (`build-ralph.sh`, `qa-ralph.sh`, `build-prompt.md`, `qa-prompt.md`). The playbook only writes the `prd.json` Ralph consumes.
-- Flow: `prd-to-ralph` → `./build-ralph.sh 999` (Huntley builds, TDD-first, one feature per iteration) → `./qa-ralph.sh 999` (Huntley's first-pass QA via Codex) → Phase 7 QA pipeline below.
+### Ralph path — autonomous overnight loop (adapted Huntley)
+- `/playbook:prd-to-ralph` — Convert the PRD + grilling decisions into Huntley's exact `prd.json` format (flat array: id, category, description, page, ui_details, behavior, data_model, priority, core, passes, tests.{unit,e2e,edge_cases}).
+- `/playbook:scaffold-ralph` — Drop adapted Ralph scripts + prompt templates into the target app's `ralph/` directory: `build.sh` (Claude Opus build loop), `qa.sh` (Codex independent QA loop), `run.sh` (chains build → QA), `build-prompt.template.md`, `qa-prompt.template.md`. **Do NOT download Huntley's raw scripts** — they reference his product-cloning infra. Customize the `CUSTOMIZE:` sections in each prompt template, rename `.template.md` → `.md`.
+- `/playbook:ralph-watch` — Drop `ralph/watch.sh` — Slack + Linear progress monitor, pure observer (safe to kill/restart). Reads flat-array prd.json + git log; distinguishes built vs QA'd.
+- Flow: `prd-to-ralph` → `scaffold-ralph` → customize prompts → `./ralph/run.sh` (build via Claude Opus → QA via Codex, two models) → Phase 7 QA pipeline below (the ungameable judge).
 
 ## Phase 6: Wire Selectors (post-build)
 - `/playbook:wire-selectors <feature>` — Adjust `data-testid` selectors to match real DOM (assertions locked by AST diff audit). Run once per feature after Ralph or GSD finishes.

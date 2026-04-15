@@ -143,29 +143,36 @@ Abort on any assertion failure.
 
 You're ready for Ralph.
 
-Next steps (Ralph does NOT live in this playbook):
-  1. Clone Huntley's scripts into your app:
-       curl -O https://raw.githubusercontent.com/ghuntley/ralph-to-ralph-prod/main/build-ralph.sh
-       curl -O https://raw.githubusercontent.com/ghuntley/ralph-to-ralph-prod/main/build-prompt.md
-       curl -O https://raw.githubusercontent.com/ghuntley/ralph-to-ralph-prod/main/qa-ralph.sh
-       curl -O https://raw.githubusercontent.com/ghuntley/ralph-to-ralph-prod/main/qa-prompt.md
-       chmod +x build-ralph.sh qa-ralph.sh
+Next steps:
+  1. Scaffold the Ralph scripts + prompts (DO NOT download Huntley's raw
+     scripts — they reference his product-cloning infra, AWS SES, Ever CLI,
+     clone-product-docs/, which you don't have):
+       /playbook:scaffold-ralph
 
-  2. Adapt `build-prompt.md` to reference YOUR prd.json path (ralph/prd.json).
+     This drops adapted templates into ralph/:
+       ralph/build.sh              — Huntley's build loop, adapted
+       ralph/build-prompt.md       — build agent instructions (customize per app)
+       ralph/qa.sh                 — Codex QA loop (independent evaluator)
+       ralph/qa-prompt.md          — QA agent instructions (customize per app)
+       ralph/run.sh                — master script, chains build → QA
 
-  3. Run the build loop:
-       ./build-ralph.sh 999      # 999 = run until all features pass
+  2. Customize ralph/build-prompt.md and ralph/qa-prompt.md — fill in the
+     CUSTOMIZE sections with your app's module paths, quality-check commands,
+     locked paths, and app-specific rules.
 
-  4. Run Huntley's QA pass (soft first-pass):
-       ./qa-ralph.sh 999
+  3. (Optional) Add Slack/Linear progress monitoring in a second terminal:
+       /playbook:ralph-watch
 
-  5. Run YOUR hardened QA pipeline (the ungameable judge):
+  4. Run the full three-layer flow:
+       ./ralph/run.sh                         # build (Claude Opus) → QA (Codex)
+
+  5. Then run YOUR hardened QA pipeline (the ungameable judge):
        /playbook:install-qa-harness           # if not already installed
        /playbook:define-quality-contracts     # for critical features
        npm run qa:baseline
        npm run qa:run
 
-Reference Ralph repos:
+Reference Ralph repos (for learning the methodology — not to be cloned):
   github.com/ghuntley/ralph-to-ralph-prod    — production-grade build+QA loops
   github.com/ghuntley/how-to-ralph-wiggum    — how-to guide
   github.com/ghuntley/ralph-os               — the pattern's origin
