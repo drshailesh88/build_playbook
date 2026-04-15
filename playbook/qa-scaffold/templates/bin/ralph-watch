@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# ralph-watch — global launcher for any project's ralph/watch.sh
+#
+# Usage:
+#   ralph-watch                # runs ./ralph/watch.sh in current directory
+#   ralph-watch <project-dir>  # runs <project-dir>/ralph/watch.sh
+#
+# The project must have been scaffolded with /playbook:ralph-watch
+# (i.e. it has ralph/watch.sh + ralph/prd.json).
+#
+# Per-project config lives in <project>/ralph/.env — webhook URL, team, etc.
+
+set -euo pipefail
+
+TARGET_DIR="${1:-$PWD}"
+
+if [ ! -d "$TARGET_DIR" ]; then
+  echo "ERROR: '$TARGET_DIR' is not a directory." >&2
+  exit 1
+fi
+
+SCRIPT="$TARGET_DIR/ralph/watch.sh"
+
+if [ ! -x "$SCRIPT" ]; then
+  echo "ERROR: $SCRIPT not found or not executable." >&2
+  echo "Hint: run /playbook:ralph-watch in that project first." >&2
+  exit 1
+fi
+
+cd "$TARGET_DIR"
+exec ./ralph/watch.sh

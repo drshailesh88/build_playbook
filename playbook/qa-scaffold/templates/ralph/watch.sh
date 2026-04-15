@@ -5,21 +5,46 @@
 # updates Linear issues. Does NOT modify any files Ralph touches — pure
 # observer. Run in a separate terminal tab. Kill/restart freely.
 #
-# Usage (all env vars optional — works with 0, 1, or 2 set):
+# Usage (all env vars optional):
 #   SLACK_WEBHOOK_URL="https://hooks.slack.com/..." \
-#   LINEAR_API_KEY="lin_api_xxxxx" \
-#   LINEAR_TEAM_ID="your-team-id" \
+#   LINEAR_TEAM="DRS" \   # optional — defaults to your default Linear team
 #   ./ralph/watch.sh
+#
+# Linear: uses the `linear` CLI (brew install linear). Must be authed
+# (`linear auth login`). If `linear` is missing or not authed, the
+# watcher skips Linear silently.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# Load local env (gitignored) so we don't depend on the invoking shell.
+if [ -f ralph/.env ]; then
+  set -a
+  . ralph/.env
+  set +a
+fi
 
 PRD_FILE="ralph/prd.json"
 POLL_INTERVAL=60
 
 SLACK_WEBHOOK="${SLACK_WEBHOOK_URL:-}"
-LINEAR_API_KEY="${LINEAR_API_KEY:-}"
-LINEAR_TEAM_ID="${LINEAR_TEAM_ID:-}"
+LINEAR_TEAM="${LINEAR_TEAM:-}"
+
+# Detect Linear CLI + auth. Set LINEAR_ENABLED=1 if usable.
+LINEAR_ENABLED=0
+if command -v linear > /dev/null 2>&1; then
+  if linear auth whoami > /dev/null 2>&1; then
+    LINEAR_ENABLED=1
+    # Auto-detect team if not explicitly set (CLI has no default-team resolver).
+    if [ -z "$LINEAR_TEAM" ]; then
+      LINEAR_TEAM=$(linear team list 2>/dev/null | awk 'NR==2 {print $1}')
+    fi
+    if [ -z "$LINEAR_TEAM" ]; then
+      echo "WARN: Linear authed but could not detect a team. Set LINEAR_TEAM=<KEY> to enable Linear." >&2
+      LINEAR_ENABLED=0
+    fi
+  fi
+fi
 
 if [ ! -f "$PRD_FILE" ]; then
   echo "ERROR: $PRD_FILE not found. Run /playbook:prd-to-ralph first." >&2
@@ -113,58 +138,47 @@ slack_post() {
   fi
 }
 
-# ─── Linear ───────────────────────────────────────────────────────────────────
+# ─── Linear (via `linear` CLI) ────────────────────────────────────────────────
 
-linear_gql() {
-  local query="$1"
-  if [ -n "$LINEAR_API_KEY" ]; then
-    curl -s -X POST "https://api.linear.app/graphql" \
-      -H "Authorization: $LINEAR_API_KEY" \
-      -H "Content-Type: application/json" \
-      -d "$(python3 -c "import json,sys; print(json.dumps({'query': sys.argv[1]}))" "$query")"
-  fi
-}
-
+# Create an issue, echo back its identifier (e.g. "DRS-42") or empty string.
 linear_create_issue() {
   local title="$1"
   local story_id="$2"
-  if [ -n "$LINEAR_API_KEY" ] && [ -n "$LINEAR_TEAM_ID" ]; then
-    local escaped_title=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1])[1:-1])" "$title")
-    local q="mutation { issueCreate(input: { teamId: \"$LINEAR_TEAM_ID\", title: \"$escaped_title\", description: \"Ralph build task: $story_id\" }) { success issue { id identifier } } }"
-    linear_gql "$q" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('issueCreate',{}).get('issue',{}).get('id',''))" 2>/dev/null || echo ""
-  fi
-}
-
-linear_state_id() {
-  local state_name="$1"
-  local q="{ workflowStates(filter: { team: { id: { eq: \"$LINEAR_TEAM_ID\" } }, name: { eq: \"$state_name\" } }) { nodes { id } } }"
-  linear_gql "$q" | python3 -c "import sys,json; d=json.load(sys.stdin); nodes=d.get('data',{}).get('workflowStates',{}).get('nodes',[]); print(nodes[0]['id'] if nodes else '')" 2>/dev/null
+  if [ "$LINEAR_ENABLED" != "1" ]; then return; fi
+  local out
+  out=$(linear issue create --no-interactive \
+    -t "$title" \
+    -d "Ralph build task: $story_id" \
+    --team "$LINEAR_TEAM" 2>&1) || { echo ""; return 0; }
+  echo "$out" | grep -oE '[A-Z]+-[0-9]+' | head -1 || echo ""
 }
 
 linear_update_status() {
   local issue_id="$1"
   local state_name="$2"
-  if [ -n "$LINEAR_API_KEY" ] && [ -n "$issue_id" ]; then
-    local sid
-    sid=$(linear_state_id "$state_name")
-    if [ -n "$sid" ]; then
-      linear_gql "mutation { issueUpdate(id: \"$issue_id\", input: { stateId: \"$sid\" }) { success } }" > /dev/null 2>&1 || true
-    fi
-  fi
+  if [ "$LINEAR_ENABLED" != "1" ] || [ -z "$issue_id" ]; then return; fi
+  linear issue update "$issue_id" -s "$state_name" > /dev/null 2>&1 || true
 }
 
 linear_add_comment() {
   local issue_id="$1"
   local body="$2"
-  if [ -n "$LINEAR_API_KEY" ] && [ -n "$issue_id" ]; then
-    local escaped=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1])[1:-1])" "$body")
-    linear_gql "mutation { commentCreate(input: { issueId: \"$issue_id\", body: \"$escaped\" }) { success } }" > /dev/null 2>&1 || true
-  fi
+  if [ "$LINEAR_ENABLED" != "1" ] || [ -z "$issue_id" ]; then return; fi
+  linear issue comment add "$issue_id" -b "$body" > /dev/null 2>&1 || true
 }
 
+LINEAR_MAP_FILE="ralph/.linear-issues.txt"
+
 bootstrap_linear() {
-  if [ -z "$LINEAR_API_KEY" ] || [ -z "$LINEAR_TEAM_ID" ]; then return; fi
-  echo "Creating Linear issues for each story..."
+  if [ "$LINEAR_ENABLED" != "1" ]; then return; fi
+  # Restore existing map so we don't create duplicates on restart.
+  if [ -f "$LINEAR_MAP_FILE" ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] && LINEAR_ISSUE_IDS+=("$line")
+    done < "$LINEAR_MAP_FILE"
+    echo "Loaded ${#LINEAR_ISSUE_IDS[@]} existing Linear issues from $LINEAR_MAP_FILE"
+  fi
+  echo "Creating Linear issues for new stories..."
   local stories
   stories=$(python3 -c "
 import json
@@ -178,9 +192,16 @@ for s in d:
 
   while IFS=$'\t' read -r sid title; do
     if [ -n "$sid" ]; then
+      # Skip if we already have an issue for this story.
+      if [ -n "$(get_linear_issue_id "$sid")" ]; then continue; fi
       issue_id=$(linear_create_issue "[$sid] $title" "$sid")
-      LINEAR_ISSUE_IDS+=("$sid:$issue_id")
-      echo "  Created: $sid → $issue_id"
+      if [ -n "$issue_id" ]; then
+        LINEAR_ISSUE_IDS+=("$sid:$issue_id")
+        echo "$sid:$issue_id" >> "$LINEAR_MAP_FILE"
+        echo "  Created: $sid → $issue_id"
+      else
+        echo "  FAILED to create Linear issue for $sid"
+      fi
     fi
   done <<< "$stories"
 }
@@ -200,7 +221,7 @@ get_linear_issue_id() {
 echo "=== Ralph Watcher ==="
 echo "Polling every ${POLL_INTERVAL}s against $PRD_FILE + git log"
 echo "Slack:  $([ -n "$SLACK_WEBHOOK" ] && echo 'configured' || echo 'not set')"
-echo "Linear: $([ -n "$LINEAR_API_KEY" ] && echo 'configured' || echo 'not set')"
+echo "Linear: $([ "$LINEAR_ENABLED" = "1" ] && echo "configured (team: ${LINEAR_TEAM:-default})" || echo 'not set')"
 echo ""
 
 LAST_COMMIT=$(get_latest_commit)

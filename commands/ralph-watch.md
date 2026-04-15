@@ -2,11 +2,13 @@
 
 Drops `ralph/watch.sh` into the target app. The watcher is a pure
 observer — polls `ralph/prd.json` + `git log` every 60 seconds, posts
-status to Slack, updates Linear issues. It does NOT modify any file
-Ralph touches. Run in a separate terminal tab. Kill/restart freely.
+status to Slack, creates/updates Linear issues via the `linear` CLI. It
+does NOT modify any file Ralph touches. Run in a separate terminal tab.
+Kill/restart freely; issue map persists to `ralph/.linear-issues.txt`.
 
-**No API keys in env = no posting**, just a terminal heartbeat. This
-makes it safe to scaffold in every app by default.
+**Per-project config lives in `ralph/.env`** (gitignored). No command-
+line secrets. Same repo can target different Slack channels in
+different checkouts.
 
 Input: `$ARGUMENTS` — optional flags.
 
@@ -38,44 +40,60 @@ Next: run your hardened QA pipeline (`npm run qa:run`).
 
 ### Linear
 
-- One issue per story, created at watcher startup (`[<id>] <description>`)
-- Issue moves to **In Progress** when the next story is up
-- Issue moves to **In Review** when Ralph's builder commits `passes:true`
-- Issue moves to **Done** (with commit-msg comment) when Codex commits
-  `qa_tested:true`
-- Falls back gracefully if any Linear state name doesn't exist on your
-  team — silently skips the transition rather than erroring
+- One issue per story, created at watcher startup (`[<id>] <description>`).
+  The mapping `<story-id>:<LINEAR-KEY>` is persisted to
+  `ralph/.linear-issues.txt` so restarts never double-create.
+- Moves to **In Progress** when the next story is up.
+- Moves to **In Review** when the builder commits `passes:true`.
+- Moves to **Done** (with commit-msg comment) when Codex commits
+  `qa_tested:true`.
+- Skips silently if any state name doesn't exist on your team.
+
+## Dependencies
+
+- **`linear` CLI** — required for Linear updates. `brew install linear`.
+  Authenticate once with `linear auth login`. The watcher detects auth
+  via `linear auth whoami` and falls back to Slack-only if missing.
+- **`curl`, `python3`** — standard on macOS.
+- **Optional: global launcher** (see below).
 
 ## Flags
 
+- `--install-launcher` — also install `~/.local/bin/ralph-watch` (a thin
+  wrapper that `cd`s into any project and runs its `ralph/watch.sh`).
+  One-time install; idempotent.
 - `--force` — overwrite an existing `ralph/watch.sh`.
 - `--dry-run` — print what would be copied without writing.
 
 ## Process
 
-### Step 1: Find the template
+### Step 1: Locate the playbook templates
 
 ```ts
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-const templatePath = [
+const playbookRoot = [
   process.env.PLAYBOOK_ROOT,
   resolve(process.env.HOME ?? "", "Build Playbook"),
   resolve(process.env.HOME ?? "", "build_playbook"),
 ]
   .filter(Boolean)
-  .map((root) => resolve(root as string, "playbook/qa-scaffold/templates/ralph/watch.sh"))
-  .find((p) => existsSync(p));
+  .find((root) =>
+    existsSync(resolve(root as string, "playbook/qa-scaffold/templates/ralph/watch.sh")),
+  );
 
-if (!templatePath) {
+if (!playbookRoot) {
   throw new Error(
-    "Can't find watch.sh template. Set PLAYBOOK_ROOT to the playbook repo's absolute path.",
+    "Can't find the playbook repo. Set PLAYBOOK_ROOT to its absolute path.",
   );
 }
+
+const watchTemplate = resolve(playbookRoot as string, "playbook/qa-scaffold/templates/ralph/watch.sh");
+const launcherTemplate = resolve(playbookRoot as string, "playbook/qa-scaffold/templates/bin/ralph-watch");
 ```
 
-### Step 2: Copy into `ralph/watch.sh`
+### Step 2: Copy watch.sh into the project
 
 ```ts
 import { promises as fs } from "node:fs";
@@ -87,57 +105,119 @@ await fs.mkdir(join(process.cwd(), "ralph"), { recursive: true });
 const exists = await fs.access(target).then(() => true).catch(() => false);
 if (exists && !flags.force) {
   console.log(`skip: ${target} already exists — pass --force to overwrite`);
-  process.exit(0);
+} else if (!flags.dryRun) {
+  await fs.copyFile(watchTemplate, target);
+  await fs.chmod(target, 0o755);
+  console.log(`wrote: ${target}`);
 }
-if (flags.dryRun) {
-  console.log(`would copy ${templatePath} → ${target}`);
-  process.exit(0);
-}
-
-await fs.copyFile(templatePath, target);
-await fs.chmod(target, 0o755);
-console.log(`wrote: ${target}`);
 ```
 
-### Step 3: Print how to run it
+### Step 3: Optionally install the global launcher
+
+If `--install-launcher` is set:
+
+```ts
+import { join } from "node:path";
+import { promises as fs } from "node:fs";
+
+const launcherDst = join(process.env.HOME ?? "", ".local", "bin", "ralph-watch");
+await fs.mkdir(join(process.env.HOME ?? "", ".local", "bin"), { recursive: true });
+
+await fs.copyFile(launcherTemplate, launcherDst);
+await fs.chmod(launcherDst, 0o755);
+console.log(`wrote launcher: ${launcherDst}`);
+console.log(`(ensure ~/.local/bin is on PATH — add \`export PATH="$HOME/.local/bin:$PATH"\` to your shell rc if needed)`);
+```
+
+### Step 4: Write an example `ralph/.env` if none exists
+
+Don't clobber an existing one. Write a template the user edits:
+
+```ts
+const envPath = join(process.cwd(), "ralph", ".env");
+const envExists = await fs.access(envPath).then(() => true).catch(() => false);
+if (!envExists && !flags.dryRun) {
+  await fs.writeFile(
+    envPath,
+    [
+      "# ralph/.env — per-project secrets for watch.sh. Gitignored.",
+      "# Copy to ralph/.env and fill in. Never commit.",
+      "",
+      "# Required for Slack updates:",
+      "SLACK_WEBHOOK_URL=",
+      "",
+      "# Optional — overrides auto-detected Linear team (first team from `linear team list`).",
+      "# LINEAR_TEAM=DRS",
+      "",
+    ].join("\n"),
+  );
+  console.log(`wrote template: ${envPath}`);
+}
+```
+
+### Step 5: Ensure gitignore
+
+Append (idempotently) to the project's `.gitignore`:
+
+```
+# ralph watcher — per-project secrets + state
+ralph/.env
+ralph/.linear-issues.txt
+```
+
+### Step 6: Print usage
 
 ```
 ✅ ralph/watch.sh installed.
 
-To start the watcher (in a separate terminal tab):
+Per-project config:
+  ralph/.env               — SLACK_WEBHOOK_URL (required), LINEAR_TEAM (optional)
 
-  # All three optional — watcher falls back gracefully if any are missing.
-  export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/xxx/yyy/zzz"
-  export LINEAR_API_KEY="lin_api_xxxxx"
-  export LINEAR_TEAM_ID="your-team-id"
-  ./ralph/watch.sh
+Linear CLI (optional — skip silently if missing):
+  brew install linear
+  linear auth login
+
+To run:
+  ./ralph/watch.sh                    # from project root
+
+Or (if you installed the launcher via --install-launcher):
+  ralph-watch                         # from project root
+  ralph-watch /path/to/any/project    # from anywhere
 
 Notes:
-- Reads ralph/prd.json (Huntley's flat array) + git log every 60s.
-- Distinguishes BUILT (passes:true) from QA'd (qa_tested:true).
-- Falls back to terminal output when env vars aren't set.
-- Kill with Ctrl-C and restart anytime; it rebuilds state from disk.
-- Pure observer: never writes to any file Ralph + Codex touch.
+- Pure observer — never writes to files Ralph touches.
+- Issue map persists to ralph/.linear-issues.txt — safe to restart.
+- Both ralph/.env and ralph/.linear-issues.txt are added to .gitignore.
 ```
 
 ## Rules
 
-- NEVER overwrite an existing `ralph/watch.sh` without `--force`. A
-  customized watcher in progress shouldn't get clobbered by a re-scaffold.
-- NEVER embed API keys in the scaffolded script. Read them from env.
-- NEVER modify `ralph/prd.json`, `ralph/progress.txt`, or any file Ralph
-  writes. The watcher is a read-only observer by design — this is the
-  invariant that lets you kill/restart it freely without ever disturbing
-  the build.
-- NEVER post to Slack / update Linear without the env vars being set. A
-  watcher with no env vars should run silently (terminal only).
+- NEVER overwrite `ralph/watch.sh` without `--force`. A customized
+  watcher in progress shouldn't get clobbered.
+- NEVER embed API keys in the scaffolded script. Only `ralph/.env`.
+- NEVER modify `ralph/prd.json`, `ralph/progress.txt`, or any file
+  Ralph writes. Pure observer by design.
+- NEVER post to Slack without `SLACK_WEBHOOK_URL` set. Unset = silent.
+- NEVER create Linear issues without `linear` CLI + auth. Missing =
+  Slack-only operation.
 
 ## Integration
 
-- Runs alongside `./ralph/run.sh` in a second terminal. No coordination
-  between them — both read from the same `prd.json` + `git log` state.
+- Runs alongside `./ralph/run.sh` in a separate terminal. No
+  coordination — both read from the same `prd.json` + `git log` state.
 - Uses Huntley's flat-array format exclusively (falls back from
-  `description` to `title` to `id` for the story label so it works
-  whatever field shape you use).
-- Not needed for Phase 7 (your hardened QA pipeline) — that pipeline
-  writes its own summaries to `.quality/runs/`.
+  `description` → `title` → `id` for the story label).
+- Not needed for Phase 7 (hardened QA pipeline) — that writes its own
+  summaries to `.quality/runs/`.
+
+## Why `linear` CLI instead of GraphQL
+
+Early drafts used raw GraphQL with `LINEAR_API_KEY`. We switched to the
+`linear` CLI because:
+
+- Auth is handled once globally (`linear auth login`), not per-project.
+- Team resolution, state name lookup, and issue creation are one-liners
+  — no manual schema queries.
+- Errors surface in readable form instead of JSON-in-JSON.
+- The watcher silently skips Linear if the CLI isn't present, so
+  Slack-only environments are unaffected.
