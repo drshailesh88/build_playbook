@@ -21,8 +21,9 @@ In the target app's `ralph/` directory:
 | `ralph/build.sh` | Build loop. Invokes Claude Code (Opus 4.6) with `--dangerously-skip-permissions --print`. One feature per iteration. Parses `<promise>NEXT\|COMPLETE\|ABORT</promise>` to drive the loop. Reads `ralph/prd.json`, `ralph/build-prompt.md`, `ralph/progress.txt`. Default 999 iterations, 20-minute per-iter timeout. |
 | `ralph/qa.sh` | QA loop. Invokes `codex exec --dangerously-bypass-approvals-and-sandbox`. Picks the first `passes:true` feature that isn't `qa_tested:true` yet. Fixes bugs in the code (never the tests), commits with `QA: <story-id>` prefix, flips `qa_tested:true`. |
 | `ralph/run.sh` | Master entrypoint. Chains `build.sh` → `qa.sh`. Logs everything to `ralph/ralph-<timestamp>.log`. macOS notification + opens `progress.txt` on completion. |
-| `ralph/build-prompt.template.md` | Build agent instructions. Generic Huntley methodology + `CUSTOMIZE:` placeholders for your app's module paths, quality-check commands, locked paths. You rename to `build-prompt.md` after customizing. |
+| `ralph/build-prompt.template.md` | Build agent instructions. Generic Huntley methodology + ABORT decision tree + `CUSTOMIZE:` placeholders for your app's module paths, quality-check commands, external services, locked paths. You rename to `build-prompt.md` after customizing. |
 | `ralph/qa-prompt.template.md` | QA agent instructions. Generic independent-evaluator pattern + `CUSTOMIZE:` markers. Rename to `qa-prompt.md` after customizing. |
+| `ralph/RESUME.md` | Stall recovery runbook in plain English. What to check, how to soft/hard interrupt, how to triage untracked files, how to restart. Read this BEFORE you panic at 2am. |
 
 ## Flags
 
@@ -40,6 +41,9 @@ In the target app's `ralph/` directory:
 - `claude` CLI + `codex` CLI are both available on PATH.
 - Python 3 is available (used for JSON counting inside the scripts —
   matches Huntley's `python3 -c "..."` pattern).
+- **Recommended**: `gtimeout` for 30-min hard wall-clock per iteration.
+  `brew install coreutils` on macOS. Without it, build.sh runs each
+  iteration without a time cap and warns at startup.
 
 ## Process
 
@@ -88,6 +92,7 @@ const TEMPLATE_MAP: Array<[string, string]> = [
   ["watch.sh", "watch.sh"],
   ["build-prompt.template.md", "build-prompt.template.md"],
   ["qa-prompt.template.md", "qa-prompt.template.md"],
+  ["RESUME.md", "RESUME.md"],
 ];
 
 for (const [src, dst] of TEMPLATE_MAP) {

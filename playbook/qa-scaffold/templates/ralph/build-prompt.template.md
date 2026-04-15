@@ -120,7 +120,66 @@ At the end of your response, emit exactly one of these promise tags:
 - `<promise>COMPLETE</promise>` — ALL stories now have `passes: true`.
 - `<promise>ABORT</promise>` — you cannot proceed. Explain why above the tag.
 
-## Absolute stop-rules
+## ABORT Decision Tree — read carefully
+
+**Aborting is a FIRST-CLASS outcome, not a failure.** An ABORT with a
+clear diagnostic is far more valuable than a 2-hour workaround that
+introduces untracked side-effects. If in doubt, ABORT.
+
+Emit `<promise>ABORT</promise>` IMMEDIATELY, with a short diagnostic
+above the tag, when ANY of the following is true:
+
+1. **A machine-level failure occurs**: out-of-memory kill (SIGKILL=137 /
+   SIGTERM=143), disk full, network timeout reaching an external service
+   <!-- CUSTOMIZE: list YOUR external services, e.g. Clerk, Neon, Upstash, Resend, Inngest, Stripe -->
+   (your auth provider, database, cache, mailer, payments, etc.), CPU
+   throttling so severe the tool cannot complete. **These are not code
+   problems. DO NOT retry with workarounds. DO NOT create new config
+   files, alt configs, or shadow files to bypass the failure.** Record
+   the observed error and ABORT.
+
+2. **A story's acceptance would require editing a LOCKED file**:
+   <!-- CUSTOMIZE: extend this list with any project-specific locked paths -->
+   - `e2e/contracts/**`, `.quality/**`
+   - `vitest.config.ts`, `playwright.config.ts`, `tsconfig.json`
+   - `stryker.config.json`, `stryker.conf.*` (any variant)
+   - `.claude/settings.json`, `.claude/hooks/**`
+   - `ralph/prd.json` schema (you may flip `passes:true` for the
+     completed story, but never edit its `behavior`, `tests`, or
+     structure)
+   - `ralph/build-prompt.md`, `ralph/build.sh`
+   - `ralph/qa-prompt.md`, `ralph/qa.sh`
+   - `ralph/run.sh`
+
+   **Creating a new file that shadows or overrides a locked file counts
+   as editing it.** Example: writing `stryker.conf.mjs` next to a locked
+   `stryker.config.json` is forbidden — Node resolution prefers the new
+   file, defeating the lock's intent.
+
+3. **A test runner exits on a signal** (137, 143): you may retry AT MOST
+   ONCE with reduced scope (e.g. `--module <single-path>` for Stryker,
+   `--project <single>` for Playwright, one vitest file at a time). If
+   still failing: ABORT.
+
+4. **You have been working on this single iteration for 30 real-world
+   minutes** without landing a commit. Stop whatever you're doing, jot
+   one paragraph in `ralph/progress.txt` explaining the holdup, and
+   ABORT. The loop will retry from the same story next time.
+
+5. **You catch yourself writing a helper script, watcher, monitoring
+   tool, configuration variant, or infrastructure patch that is NOT in
+   the story's `behavior` field.** Ralph builds product, not tools. If
+   the spec doesn't name it, don't write it. ABORT instead.
+
+6. **The spec is ambiguous in a way you cannot resolve** from
+   `prd.json`, `CLAUDE.md`, and existing module patterns. Do not guess.
+   ABORT.
+
+7. **An external dependency is missing or unconfigured** (an env var the
+   story needs doesn't exist, a table referenced in `data_model` isn't
+   in the schema, etc.). ABORT.
+
+## Absolute stop-rules (still apply)
 
 - ONE story per iteration. Do not try to batch multiple stories.
 - Tests FIRST. Never write tests after the code passes by coincidence.
@@ -129,16 +188,13 @@ At the end of your response, emit exactly one of these promise tags:
 - Never introduce secrets into code or commits. Use env vars.
 - Keep CI green. If you break a prior test, fix it in the same commit or
   revert your change. Do NOT commit red tests.
-- **Locked files you may NEVER modify** (enforced by `.claude/settings.json`):
-  <!-- CUSTOMIZE: list your locked paths. Typical set: -->
-  - `.quality/**`
-  - `e2e/contracts/**`
-  - `vitest.config.ts`, `playwright.config.ts`, `stryker.config.json`
-  - `tsconfig.json`
-  - `.claude/settings.json`, `.claude/hooks/**`
-  - `qa/**` (except what your stories explicitly name)
-  If a story seems to require editing one of these, emit ABORT with an
-  explanation.
+- Never modify files under `qa/` unless a story explicitly names
+  `qa/baselines/` for recording a result.
+- **Partial success is a legitimate outcome ONLY when** the story's
+  `behavior` explicitly allows a ladder of acceptable results (e.g.
+  "full or partial baseline OK"). Read the `behavior` carefully. Do
+  NOT invent partial-success outcomes for stories that demand
+  completeness.
 
 ## What "done" looks like for a story
 

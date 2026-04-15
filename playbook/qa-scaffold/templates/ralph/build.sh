@@ -16,7 +16,7 @@ MAX_ITER="${1:-999}"
 PRD=ralph/prd.json
 PROGRESS=ralph/progress.txt
 BUILD_PROMPT=ralph/build-prompt.md
-ITER_TIMEOUT=1200   # 20 min per iteration
+ITER_TIMEOUT=1800   # 30-minute hard wall-clock per iteration (gtimeout/timeout)
 SLEEP_BETWEEN=3
 
 if [ ! -f "$PRD" ]; then
@@ -27,6 +27,18 @@ fi
 if [ ! -f "$BUILD_PROMPT" ]; then
   echo "ERROR: $BUILD_PROMPT not found. Run /playbook:scaffold-ralph first." >&2
   exit 1
+fi
+
+# Resolve timeout command (macOS ships without `timeout`; coreutils supplies `gtimeout`).
+# Without one, an iteration can hang indefinitely — so we WARN but don't fail.
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_CMD=(timeout "$ITER_TIMEOUT")
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_CMD=(gtimeout "$ITER_TIMEOUT")
+else
+  echo "WARNING: no timeout command found. Install via 'brew install coreutils' on macOS for gtimeout." >&2
+  echo "         Iterations will run without a time limit — Ctrl-C if hung." >&2
+  TIMEOUT_CMD=()
 fi
 
 count_passes() {
@@ -43,7 +55,7 @@ echo "────────────────────────�
 echo "Ralph build loop"
 echo "  prd:        $PRD  ($TOTAL stories, $START_PASSES already passing)"
 echo "  max iter:   $MAX_ITER"
-echo "  timeout:    ${ITER_TIMEOUT}s per iter"
+echo "  timeout:    ${ITER_TIMEOUT}s per iter (${TIMEOUT_CMD[0]:-none})"
 echo "  model:      claude-opus-4-6"
 echo "───────────────────────────────────────────────────────────────"
 
@@ -84,7 +96,7 @@ EOF
 )
 
   set +e
-  OUTPUT=$(timeout "$ITER_TIMEOUT" claude \
+  OUTPUT=$("${TIMEOUT_CMD[@]}" claude \
     --dangerously-skip-permissions \
     --print \
     --model claude-opus-4-6 \
