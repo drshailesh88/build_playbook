@@ -1,9 +1,17 @@
 # scaffold-ralph — Install adapted Ralph scripts into the target app
 
-Drops the three-layer Ralph stack (build.sh → qa.sh chained via run.sh)
-plus the build and QA prompt templates into the target app's `ralph/`
+Drops the full Ralph stack (build + verify + 5 harden loops chained via
+run.sh) plus all prompt templates into the target app's `ralph/`
 directory. Scripts are generic; the prompt templates have `CUSTOMIZE:`
 markers you fill in with your app's specifics.
+
+**Installed loops by tier:**
+
+- **Tier 1 — Build + Verify** (always chained in run.sh): `build.sh`, `qa.sh`
+- **Tier 2 — Harden** (chained in run.sh as Phase 3): `harden.sh`
+- **Tier 3 — Completeness, Stress, Monitor** (installed as standalone; chain
+  into run.sh after each is runtime-proven): `harden-completeness.sh`,
+  `harden-adversarial.sh`, `harden-drift.sh`, `harden-security.sh`
 
 **Do NOT download Huntley's raw scripts.** They reference his
 product-cloning infra (build-spec.md, clone-product-docs/, AWS SES,
@@ -18,11 +26,22 @@ In the target app's `ralph/` directory:
 
 | File | Purpose |
 |---|---|
-| `ralph/build.sh` | Build loop. Invokes Claude Code (Opus 4.6) with `--dangerously-skip-permissions --print`. One feature per iteration. Parses `<promise>NEXT\|COMPLETE\|ABORT</promise>` to drive the loop. Reads `ralph/prd.json`, `ralph/build-prompt.md`, `ralph/progress.txt`. Default 999 iterations, 20-minute per-iter timeout. |
-| `ralph/qa.sh` | QA loop. Invokes `codex exec --dangerously-bypass-approvals-and-sandbox`. Picks the first `passes:true` feature that isn't `qa_tested:true` yet. Fixes bugs in the code (never the tests), commits with `QA: <story-id>` prefix, flips `qa_tested:true`. |
-| `ralph/run.sh` | Master entrypoint. Chains `build.sh` → `qa.sh`. Logs everything to `ralph/ralph-<timestamp>.log`. macOS notification + opens `progress.txt` on completion. |
-| `ralph/build-prompt.template.md` | Build agent instructions. Generic Huntley methodology + ABORT decision tree + `CUSTOMIZE:` placeholders for your app's module paths, quality-check commands, external services, locked paths. You rename to `build-prompt.md` after customizing. |
-| `ralph/qa-prompt.template.md` | QA agent instructions. Generic independent-evaluator pattern + `CUSTOMIZE:` markers. Rename to `qa-prompt.md` after customizing. |
+| `ralph/build.sh` | Build loop. Invokes Claude Opus 4.6. One feature per iteration. Parses `<promise>NEXT\|COMPLETE\|ABORT</promise>`. Reads `ralph/prd.json`, `ralph/build-prompt.md`, `ralph/progress.txt`. Default 999 iterations, 30-minute per-iter timeout. |
+| `ralph/qa.sh` | Verify loop. Invokes Codex with dual-account failover. Picks first `passes:true` feature not yet `qa_tested:true`. Fixes bugs in code (never tests), commits with `QA:` prefix, flips `qa_tested:true`. |
+| `ralph/harden.sh` | Harden loop. Claude Sonnet 4.6 kills surviving mutants per module. Reads `.quality/state.json` for work source. Writes `ralph/harden-report.json`. Commit prefix `HARDEN:`. Model override via `HARDEN_MODEL` env var. |
+| `ralph/harden-completeness.sh` | Completeness loop. Claude Opus 4.6 detects features promised by the PRD but missing from the running app (via `feature-census` skill), and appends them back to `ralph/prd.json`. Then triggers build + qa automatically. Catches the "42 missing features" class of bug. Commit prefix `COMPLETENESS:`. |
+| `ralph/harden-adversarial.sh` | Red-team loop. Codex with dual-account failover. Systematically attacks every `qa_tested:true` feature using a 7-category attack catalog (injection, auth, race, resource, state, UX, info leakage). Commit prefix `RED:`. |
+| `ralph/harden-drift.sh` | Drift loop. Claude Sonnet 4.6 runs all contract acceptance tests (`.quality/contracts/*/acceptance.spec.ts`) and fixes source code to match any failing contract. Contracts are locked — code bends to match them, never the other way. Commit prefix `DRIFT:`. |
+| `ralph/harden-security.sh` | Security loop. Codex with dual-account failover. Systematic pass through OWASP Top 10 (2021) — A01..A10, one category per iteration. Override categories via `OWASP_CATEGORIES=A01,A03,A07` env var. Commit prefix `SEC:`. |
+| `ralph/run.sh` | Master entrypoint. Chains `build.sh` → `qa.sh` → `harden.sh`. Env skips: `BUILD_SKIP=1` `QA_SKIP=1` `HARDEN_SKIP=1`. Logs to `ralph/ralph-<timestamp>.log`. macOS notification + opens `progress.txt` on completion. Other harden loops run standalone until runtime-proven, then get chained in here. |
+| `ralph/build-prompt.template.md` | Build agent instructions. Rename to `build-prompt.md` after customizing. |
+| `ralph/qa-prompt.template.md` | QA agent instructions. Rename to `qa-prompt.md` after customizing. |
+| `ralph/harden-prompt.template.md` | Harden (mutation-killer) agent instructions. Reads Stryker surviving-mutants report; adds tests, never weakens existing ones. Rename to `harden-prompt.md`. |
+| `ralph/harden-completeness-prompt.template.md` | Completeness agent instructions. Runs feature-census, diffs vs PRD, writes full story entries for missing features. APPEND-only to `prd.json`. Rename to `harden-completeness-prompt.md`. |
+| `ralph/harden-adversarial-prompt.template.md` | Red-team agent instructions. Full 7-category attack catalog; fixes bugs in source only, adds regression tests. Rename to `harden-adversarial-prompt.md`. |
+| `ralph/harden-drift-prompt.template.md` | Drift agent instructions. Fixes source to match locked contracts; never touches contract files. Rename to `harden-drift-prompt.md`. |
+| `ralph/harden-security-prompt.template.md` | Security agent instructions. OWASP Top 10 category table with specific patterns per code. Rename to `harden-security-prompt.md`. |
+| `ralph/watch.sh` | Optional Slack + Linear progress monitor. |
 | `ralph/RESUME.md` | Stall recovery runbook in plain English. What to check, how to soft/hard interrupt, how to triage untracked files, how to restart. Read this BEFORE you panic at 2am. |
 
 ## Flags
@@ -86,12 +105,30 @@ await fs.mkdir(targetRalph, { recursive: true });
 
 const TEMPLATE_MAP: Array<[string, string]> = [
   // [src name in templates/, dst name in target ralph/]
+
+  // Tier 1 — Build + Verify
   ["build.sh", "build.sh"],
   ["qa.sh", "qa.sh"],
-  ["run.sh", "run.sh"],
-  ["watch.sh", "watch.sh"],
   ["build-prompt.template.md", "build-prompt.template.md"],
   ["qa-prompt.template.md", "qa-prompt.template.md"],
+
+  // Tier 2 — Harden (mutation-kill)
+  ["harden.sh", "harden.sh"],
+  ["harden-prompt.template.md", "harden-prompt.template.md"],
+
+  // Tier 3 — Completeness + Stress + Monitor (standalone until runtime-proven)
+  ["harden-completeness.sh", "harden-completeness.sh"],
+  ["harden-completeness-prompt.template.md", "harden-completeness-prompt.template.md"],
+  ["harden-adversarial.sh", "harden-adversarial.sh"],
+  ["harden-adversarial-prompt.template.md", "harden-adversarial-prompt.template.md"],
+  ["harden-drift.sh", "harden-drift.sh"],
+  ["harden-drift-prompt.template.md", "harden-drift-prompt.template.md"],
+  ["harden-security.sh", "harden-security.sh"],
+  ["harden-security-prompt.template.md", "harden-security-prompt.template.md"],
+
+  // Orchestrator + helpers
+  ["run.sh", "run.sh"],
+  ["watch.sh", "watch.sh"],
   ["RESUME.md", "RESUME.md"],
 ];
 
@@ -119,38 +156,64 @@ for (const [src, dst] of TEMPLATE_MAP) {
 ### Step 3: Print customization checklist
 
 ```
-✅ Ralph scripts scaffolded at ./ralph/
+✅ Ralph stack scaffolded at ./ralph/
+   Tier 1: build.sh, qa.sh
+   Tier 2: harden.sh
+   Tier 3: harden-completeness.sh, harden-adversarial.sh,
+           harden-drift.sh, harden-security.sh
+   + run.sh orchestrator
 
 Next (required before running):
 
-1. Customize ralph/build-prompt.template.md:
-   - Replace {APP_NAME}
-   - Fill in every "CUSTOMIZE:" section with your app's specifics:
-       * Module-path references (e.g. "src/lib/actions/travel.ts")
-       * App-specific absolute rules (port numbers, scoping invariants)
-       * Quality-check commands (your exact npm run scripts)
-       * Locked paths beyond the defaults
-   - Rename to build-prompt.md
+1. Customize Tier 1 prompts (required for ./ralph/run.sh):
+   - ralph/build-prompt.template.md → build-prompt.md
+   - ralph/qa-prompt.template.md → qa-prompt.md
+   For each: replace {APP_NAME}, fill every "CUSTOMIZE:" block with your
+   app's specifics (module paths, quality-check commands, locked paths,
+   external services).
 
-2. Customize ralph/qa-prompt.template.md:
-   - Same placeholders as above
-   - Rename to qa-prompt.md
+2. Customize Tier 2 prompt (required for harden.sh):
+   - ralph/harden-prompt.template.md → harden-prompt.md
+   Fill CUSTOMIZE blocks for Stryker command + test directory.
 
-3. Ensure ralph/prd.json exists (run /playbook:prd-to-ralph if not).
+3. Customize Tier 3 prompts (required only when you run each loop):
+   - ralph/harden-completeness-prompt.template.md → harden-completeness-prompt.md
+     (fill CUSTOMIZE for PRD source paths + app-specific ubiquitous language)
+   - ralph/harden-adversarial-prompt.template.md → harden-adversarial-prompt.md
+     (fill CUSTOMIZE with app-specific attack vectors)
+   - ralph/harden-drift-prompt.template.md → harden-drift-prompt.md
+     (fill CUSTOMIZE with contract test command if non-default)
+   - ralph/harden-security-prompt.template.md → harden-security-prompt.md
+     (fill CUSTOMIZE with per-OWASP-category hotspot lists)
 
-4. Run:
-   ./ralph/run.sh                # full build → QA chain, default 999 iters each
-   ./ralph/run.sh 50 50          # cap each phase at 50 iters
+4. Ensure ralph/prd.json exists (run /playbook:prd-to-ralph if not).
 
-5. (Optional) In a second terminal, monitor progress on Slack + Linear:
-   /playbook:ralph-watch         # drops ralph/watch.sh
+5. Ensure /playbook:install-qa-harness has been run — harden.sh, drift,
+   and the qa-controller require the .quality/ tree to exist.
+
+6. Run:
+   ./ralph/run.sh                # build → qa → harden, 999 iters each
+   ./ralph/run.sh 50 50 50       # cap each phase at 50 iters
+   BUILD_SKIP=1 QA_SKIP=1 ./ralph/run.sh    # run just the harden phase
+
+   Standalone runs (for debugging individual loops):
+   ./ralph/harden.sh 10                 # just harden, 10 iters
+   ./ralph/harden-completeness.sh 5     # detect + fill missing features
+   ./ralph/harden-adversarial.sh 10     # red-team
+   ./ralph/harden-drift.sh 10           # contract drift
+   ./ralph/harden-security.sh 5         # OWASP systematic
+   OWASP_CATEGORIES=A01,A03 ./ralph/harden-security.sh 2   # subset
+
+   Model overrides (A/B testing):
+   HARDEN_MODEL=claude-opus-4-6 ./ralph/harden.sh 10
+   COMPLETENESS_MODEL=claude-sonnet-4-6 ./ralph/harden-completeness.sh 5
+
+7. (Optional) In a second terminal, monitor on Slack + Linear:
+   /playbook:ralph-watch
    SLACK_WEBHOOK_URL=... LINEAR_API_KEY=... LINEAR_TEAM_ID=... ./ralph/watch.sh
 
-After Ralph finishes, run YOUR hardened QA pipeline (the ungameable judge):
-   /playbook:install-qa-harness           # if not already installed
-   /playbook:define-quality-contracts     # for critical features
-   npm run qa:baseline
-   npm run qa:run
+8. After Ralph finishes, run the release gate — the ungameable judge:
+   /playbook:qa-run       # runs deterministic release gates, writes summary.md
 ```
 
 ## Rules
@@ -171,7 +234,14 @@ After Ralph finishes, run YOUR hardened QA pipeline (the ungameable judge):
 ## Integration with the rest of the playbook
 
 - Runs AFTER `/playbook:prd-to-ralph` writes `ralph/prd.json`.
+- Runs AFTER `/playbook:install-qa-harness` has installed the `.quality/`
+  tree — harden.sh and harden-drift.sh both need it, and harden.sh calls
+  `npx qa-controller` to verify mutation scores each iteration.
 - Produces the input layer for the Phase 5 Ralph path in `/playbook:commands`.
-- After Ralph's build+QA finishes, the user moves to Phase 6
-  (`/playbook:wire-selectors`) and Phase 7
-  (`/playbook:install-qa-harness` → `/playbook:qa-run`).
+- After `./ralph/run.sh` finishes (build + qa + harden), the user moves to
+  Phase 6 (`/playbook:wire-selectors`) and Phase 7 (`/playbook:qa-run` for
+  release gates producing the signed summary.md verdict).
+- Tier 3 loops (completeness, adversarial, drift, security) are installed
+  here but NOT chained into run.sh yet. Run them standalone during
+  debugging; chain them into run.sh (see run.sh's Phase 3 pattern) once
+  each has survived at least one real overnight run on your app.

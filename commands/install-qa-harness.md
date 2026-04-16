@@ -63,6 +63,12 @@ directory; Claude will run the installer script directly.
    `/playbook:contract-pack <feature-name>`.
 4. Run the first baseline: `npm run qa baseline`.
 5. Run the first QA session: `npm run qa run`.
+6. Install the Ralph loop stack (build + qa + harden + optional Tier 3
+   standalone loops): `/playbook:scaffold-ralph`. The harden loops rely
+   on this `.quality/` tree to read mutation baselines and verify scores,
+   so `/playbook:install-qa-harness` must run FIRST, then
+   `/playbook:scaffold-ralph`. See `/playbook:scaffold-ralph` for the
+   full file manifest (currently 17 Ralph template files).
 
 ## Rules
 
