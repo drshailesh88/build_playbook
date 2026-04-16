@@ -78,32 +78,65 @@ EOF
 fi
 
 # Python helpers for JSON counting — fail loud if state.json is malformed.
+# Schema: state.json has modules as a DICT keyed by path, each entry has
+# {tier, mutation_baseline, has_exceeded_floor, ...}. Floor is encoded in
+# the tier name (critical_75 → 75, business_60 → 60, ui_gates_only → skip).
+
+parse_floor_py='
+def parse_floor(tier):
+    if not tier or "ui_gates_only" in tier:
+        return None  # no mutation floor for UI-only modules
+    # Tier format: "<name>_<floor>" e.g. "critical_75"
+    parts = tier.rsplit("_", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return int(parts[1])
+    return None
+'
+
 count_below_floor() {
   python3 -c "
 import json
+$parse_floor_py
 s = json.load(open('$STATE'))
-mods = s.get('modules', [])
-print(sum(1 for m in mods if m.get('belowFloor', False)))
+mods = s.get('modules', {})
+n = 0
+for path, m in mods.items():
+    floor = parse_floor(m.get('tier'))
+    if floor is None:
+        continue  # skip ui_gates_only — no mutation floor
+    if not m.get('has_exceeded_floor', False):
+        n += 1
+print(n)
 "
 }
 count_modules() {
   python3 -c "
 import json
+$parse_floor_py
 s = json.load(open('$STATE'))
-print(len(s.get('modules', [])))
+# Count only modules with a mutation floor (skip ui_gates_only).
+print(sum(1 for _, m in s.get('modules', {}).items() if parse_floor(m.get('tier')) is not None))
 "
 }
 first_below_floor() {
   # Returns module path + tier + baseline + floor as TSV, or empty.
   python3 -c "
 import json
+$parse_floor_py
 s = json.load(open('$STATE'))
 r = json.load(open('$HARDEN_REPORT'))
 blocked = {e['module'] for e in r if e.get('status') == 'BLOCKED'}
-for m in s.get('modules', []):
-    if m.get('belowFloor') and m.get('path') not in blocked:
-        print(f\"{m['path']}\t{m.get('tier','?')}\t{m.get('baseline','?')}\t{m.get('floor','?')}\")
-        break
+for path, m in s.get('modules', {}).items():
+    floor = parse_floor(m.get('tier'))
+    if floor is None:
+        continue
+    if m.get('has_exceeded_floor', False):
+        continue
+    if path in blocked:
+        continue
+    score = m.get('mutation_baseline', '?')
+    print(f\"{path}\t{m.get('tier','?')}\t{score}\t{floor}\")
+    break
 "
 }
 
@@ -238,11 +271,12 @@ print(prev[-1].get('signature', '') if prev else '')
   SIG_AFTER=$(python3 -c "
 import json
 s = json.load(open('$STATE'))
-m = next((x for x in s.get('modules', []) if x.get('path') == '$MODULE'), None)
-if not m or not m.get('belowFloor', False):
+mods = s.get('modules', {})
+m = mods.get('$MODULE')
+if not m or m.get('has_exceeded_floor', False):
     print('')  # At floor now — no signature.
 else:
-    print(f\"score={m.get('baseline','?')}-surv={m.get('survivingMutants','?')}\")
+    print(f\"score={m.get('mutation_baseline','?')}\")
 ")
 
   # Update harden-report.json: append this iteration's outcome + plateau buffer.

@@ -148,15 +148,23 @@ DELTA_BUILT=$((END_PASSES - START_PASSES))
 DELTA_QA=$((END_QA - START_QA))
 
 # Harden status — read .quality/state.json if it exists.
+# Schema: modules is a DICT keyed by path; each has tier + has_exceeded_floor.
+# ui_gates_only modules are excluded (no mutation floor).
 HARDEN_STATUS=""
 if [ -f .quality/state.json ]; then
   HARDEN_STATUS=$(python3 -c "
 import json
+def has_floor(tier):
+    if not tier or 'ui_gates_only' in tier:
+        return False
+    parts = tier.rsplit('_', 1)
+    return len(parts) == 2 and parts[1].isdigit()
 try:
     s = json.load(open('.quality/state.json'))
-    mods = s.get('modules', [])
-    below = sum(1 for m in mods if m.get('belowFloor', False))
-    total = len(mods)
+    mods = s.get('modules', {})
+    tracked = [(p, m) for p, m in mods.items() if has_floor(m.get('tier'))]
+    below = sum(1 for _, m in tracked if not m.get('has_exceeded_floor', False))
+    total = len(tracked)
     print(f'{total-below}/{total} at floor')
 except Exception:
     print('(state.json unreadable)')
