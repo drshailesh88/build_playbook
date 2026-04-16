@@ -125,6 +125,71 @@ if pending:
 " 2>/dev/null
 }
 
+# ─── Harden-phase state readers ───────────────────────────────────────────────
+
+# Count modules still below their tier floor. Reads .quality/state.json (schema:
+# modules is a dict keyed by path; each entry has tier + has_exceeded_floor).
+# ui_gates_only modules have no mutation floor and are excluded.
+count_below_floor() {
+  python3 -c "
+import json
+def has_floor(tier):
+    if not tier or 'ui_gates_only' in tier: return False
+    parts = tier.rsplit('_', 1)
+    return len(parts) == 2 and parts[1].isdigit()
+try:
+    s = json.load(open('.quality/state.json'))
+    mods = s.get('modules', {})
+    tracked = [(p, m) for p, m in mods.items() if has_floor(m.get('tier'))]
+    below = sum(1 for _, m in tracked if not m.get('has_exceeded_floor', False))
+    print(f'{below}/{len(tracked)}')
+except Exception:
+    print('?/?')
+" 2>/dev/null
+}
+
+# Extract module path from a HARDEN: commit subject.
+# Format: "HARDEN: <module-path> — <rest>" or "HARDEN: <module-path> iter N — ..."
+extract_harden_module() {
+  echo "$1" | sed -E 's/^HARDEN:[[:space:]]+([^ —]+).*/\1/' | head -1
+}
+
+# Count adversarial-report entries (one per feature red-teamed).
+count_red_done() {
+  python3 -c "
+try:
+    import json
+    r = json.load(open('ralph/adversarial-report.json'))
+    print(len({e['story_id'] for e in r if e.get('story_id')}))
+except Exception:
+    print(0)
+" 2>/dev/null
+}
+
+# Count drift-report entries marked GREEN (contracts now passing).
+count_drift_green() {
+  python3 -c "
+try:
+    import json
+    r = json.load(open('ralph/drift-report.json'))
+    print(sum(1 for e in r if e.get('status') == 'GREEN'))
+except Exception:
+    print(0)
+" 2>/dev/null
+}
+
+# Count security-report categories in GREEN status (0..10).
+count_sec_green() {
+  python3 -c "
+try:
+    import json
+    r = json.load(open('ralph/security-report.json'))
+    print(sum(1 for e in r if e.get('status') == 'GREEN'))
+except Exception:
+    print(0)
+" 2>/dev/null
+}
+
 # ─── Slack ────────────────────────────────────────────────────────────────────
 
 slack_post() {
@@ -222,6 +287,8 @@ echo "=== Ralph Watcher ==="
 echo "Polling every ${POLL_INTERVAL}s against $PRD_FILE + git log"
 echo "Slack:  $([ -n "$SLACK_WEBHOOK" ] && echo 'configured' || echo 'not set')"
 echo "Linear: $([ "$LINEAR_ENABLED" = "1" ] && echo "configured (team: ${LINEAR_TEAM:-default})" || echo 'not set')"
+echo "Monitoring: RALPH: | QA: | HARDEN: | COMPLETENESS: | RED: | DRIFT: | SEC:"
+echo "Exit:   $([ "${WATCH_EXIT_ON_QA_COMPLETE:-0}" = "1" ] && echo 'auto-exit when qa_tested complete (legacy)' || echo 'continuous (Ctrl-C to stop)')"
 echo ""
 
 LAST_COMMIT=$(get_latest_commit)
@@ -246,7 +313,9 @@ while true; do
   if [ "$CURRENT_COMMIT" != "$LAST_COMMIT" ]; then
     COMMIT_MSG="${CURRENT_COMMIT#*|}"
 
-    if [ "$CURRENT_PASSES" -gt "$LAST_PASSES" ]; then
+    # Route by commit prefix. Build/QA retain their PRD-counter-based semantics
+    # (proven). New loops are dispatched by prefix match on the commit subject.
+    if [[ "$COMMIT_MSG" == RALPH:* ]] && [ "$CURRENT_PASSES" -gt "$LAST_PASSES" ]; then
       STORY_ID=$(latest_passed_id)
       LABEL=$(story_label "$STORY_ID")
 
@@ -270,8 +339,7 @@ Commit: $COMMIT_MSG"
         fi
       fi
 
-    elif [ "$CURRENT_QA" -gt "$LAST_QA" ]; then
-      # QA agent completed a feature
+    elif [[ "$COMMIT_MSG" == QA:* ]] && [ "$CURRENT_QA" -gt "$LAST_QA" ]; then
       QA_ID=$(python3 -c "
 import json
 d = json.load(open('$PRD_FILE'))
@@ -293,27 +361,60 @@ Commit: \`$COMMIT_MSG\`"
 
 Commit: $COMMIT_MSG"
       fi
+
+    elif [[ "$COMMIT_MSG" == HARDEN:* ]]; then
+      MODULE=$(extract_harden_module "$COMMIT_MSG")
+      BELOW_RATIO=$(count_below_floor)
+      slack_post "🛡️ *Hardened:* \`$MODULE\`
+Modules at floor: $BELOW_RATIO (fewer below = better)
+Commit: \`$COMMIT_MSG\`"
+
+    elif [[ "$COMMIT_MSG" == COMPLETENESS:* ]]; then
+      NEW_TOTAL=$(total_tasks)
+      slack_post "📋 *Completeness:* missing features appended
+PRD now has $NEW_TOTAL entries ($CURRENT_PASSES built, $CURRENT_QA QA'd)
+Commit: \`$COMMIT_MSG\`"
+
+    elif [[ "$COMMIT_MSG" == RED:* ]]; then
+      RED_DONE=$(count_red_done)
+      slack_post "🎯 *Red-team:* feature attacked
+Features red-teamed so far: $RED_DONE
+Commit: \`$COMMIT_MSG\`"
+
+    elif [[ "$COMMIT_MSG" == DRIFT:* ]]; then
+      DRIFT_DONE=$(count_drift_green)
+      slack_post "🔀 *Drift fixed:* contract now matches runtime
+Contracts cleared so far: $DRIFT_DONE
+Commit: \`$COMMIT_MSG\`"
+
+    elif [[ "$COMMIT_MSG" == SEC:* ]]; then
+      SEC_DONE=$(count_sec_green)
+      slack_post "🔒 *Security:* OWASP category audited
+Categories GREEN so far: $SEC_DONE/10
+Commit: \`$COMMIT_MSG\`"
+
     else
       slack_post "🔧 *Commit:* \`$COMMIT_MSG\`
 Progress: $CURRENT_PASSES/$TOTAL built, $CURRENT_QA/$TOTAL QA'd"
     fi
 
-    # Everything done?
-    if [ "$CURRENT_QA" -ge "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
-      slack_post "🎉 *Ralph COMPLETE!*
+    # Build+QA 100%? Announce once — but only exit if user opts in.
+    if [ "$CURRENT_QA" -ge "$TOTAL" ] && [ "$TOTAL" -gt 0 ] && [ "$LAST_QA" -lt "$TOTAL" ]; then
+      slack_post "🎉 *Build + QA COMPLETE!*
 All $TOTAL features built AND QA'd.
+Harden phases (if running) will continue — watcher remains active.
 
-$(get_story_statuses)
-
-Next: run your hardened QA pipeline (\`npm run qa:run\`)."
+$(get_story_statuses)"
 
       for entry in "${LINEAR_ISSUE_IDS[@]:-}"; do
         issue_id="${entry#*:}"
         linear_update_status "$issue_id" "Done" 2>/dev/null || true
       done
 
-      echo "All features built + QA'd. Watcher exiting."
-      exit 0
+      if [ "${WATCH_EXIT_ON_QA_COMPLETE:-0}" = "1" ]; then
+        echo "All features built + QA'd; WATCH_EXIT_ON_QA_COMPLETE=1 set. Watcher exiting."
+        exit 0
+      fi
     fi
 
     LAST_COMMIT="$CURRENT_COMMIT"

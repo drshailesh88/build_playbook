@@ -1,10 +1,23 @@
 # ralph-watch — Slack + Linear progress monitor for Ralph builds
 
 Drops `ralph/watch.sh` into the target app. The watcher is a pure
-observer — polls `ralph/prd.json` + `git log` every 60 seconds, posts
-status to Slack, creates/updates Linear issues via the `linear` CLI. It
-does NOT modify any file Ralph touches. Run in a separate terminal tab.
-Kill/restart freely; issue map persists to `ralph/.linear-issues.txt`.
+observer — polls `ralph/prd.json` + `.quality/state.json` + `git log`
+every 60 seconds, posts status to Slack, creates/updates Linear issues
+via the `linear` CLI. It does NOT modify any file Ralph touches.
+Run in a separate terminal tab. Kill/restart freely; issue map persists
+to `ralph/.linear-issues.txt`.
+
+**Monitors all 7 Ralph loops** (dispatches by commit-subject prefix):
+
+| Prefix | Loop | Slack emoji | Extra data read |
+|---|---|---|---|
+| `RALPH:` | build.sh | ✅ Built | prd.json (passes count) |
+| `QA:` | qa.sh | 🟢 QA'd | prd.json (qa_tested count) |
+| `HARDEN:` | harden.sh | 🛡️ Hardened | .quality/state.json (modules below floor) |
+| `COMPLETENESS:` | harden-completeness.sh | 📋 Completeness | prd.json (total count delta) |
+| `RED:` | harden-adversarial.sh | 🎯 Red-team | ralph/adversarial-report.json |
+| `DRIFT:` | harden-drift.sh | 🔀 Drift fixed | ralph/drift-report.json |
+| `SEC:` | harden-security.sh | 🔒 Security | ralph/security-report.json |
 
 **Per-project config lives in `ralph/.env`** (gitignored). No command-
 line secrets. Same repo can target different Slack channels in
@@ -32,11 +45,30 @@ Commit: `RALPH: infra-001 - Database schema — added users, events, sessions`
 Progress: 1/42 built, 1/42 QA'd
 Commit: `QA: infra-001 - fixed 0 bugs in Database schema`
 
-🎉 Ralph COMPLETE!
+🎉 Build + QA COMPLETE!
 All 42 features built AND QA'd.
+Harden phases (if running) will continue — watcher remains active.
 
-Next: run your hardened QA pipeline (`npm run qa:run`).
+🛡️ Hardened: `src/lib/actions/batch-sync.ts`
+Modules at floor: 55/71 (fewer below = better)
+Commit: `HARDEN: src/lib/actions/batch-sync.ts iter 3 — auto-snapshot (score→)`
+
+📋 Completeness: missing features appended
+PRD now has 45 entries (42 built, 42 QA'd)
+Commit: `COMPLETENESS: appended 3 missing features — password-reset, account-delete, session-timeout`
+
+🎯 Red-team: feature attacked
+Features red-teamed so far: 12
+Commit: `RED: auth-login — SQL injection in login form — parameterized query fix`
+
+🔒 Security: OWASP category audited
+Categories GREEN so far: 4/10
+Commit: `SEC: A03 — injection audit complete, 2 findings fixed`
 ```
+
+**Exit behavior:**
+- Default: continuous (Ctrl-C to stop). Keeps running through all 7 loops overnight.
+- Legacy: `WATCH_EXIT_ON_QA_COMPLETE=1 ./ralph/watch.sh` — auto-exits after build+QA done (pre-harden behavior).
 
 ### Linear
 
