@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Ralph completeness loop — catch features the builder silently skipped.
 #
-# Compares the PRD's OUGHT list (ralph/prd.json) to the running app's IS list
-# (feature-census output) and appends any missing features back into prd.json
+# Compares the PRD's OUGHT list (ralph/prd.json) to the running app's
+# deterministic IS list (completeness extractor output) and appends any
+# missing features back into prd.json
 # with passes:false. Then invokes build.sh + qa.sh to build and verify them.
 # Loops until OUGHT == IS.
 #
@@ -10,8 +11,10 @@
 # it thinks are "obvious" or out of scope. Initial QA runs surfaced 42 such
 # missing features manually — this loop automates that discovery overnight.
 #
-# Work source: the LLM invokes the feature-census skill to extract IS, reads
-#   ralph/prd.json for OUGHT, computes the diff, and appends missing entries.
+# Work source: ./ralph/completeness-is-extractor.sh writes
+#   ralph/completeness-is-list.json + ralph/completeness-evidence.json.
+#   The LLM reads those deterministic files for IS, reads ralph/prd.json for
+#   OUGHT, computes the diff, and appends missing entries.
 #
 # Progress tracking:
 #   ralph/completeness-report.json  — per-iteration diff results + attempts
@@ -34,6 +37,9 @@ MAX_ITER="${1:-20}"
 PRD=ralph/prd.json
 COMPLETENESS_REPORT=ralph/completeness-report.json
 COMPLETENESS_PROGRESS=ralph/completeness-progress.txt
+COMPLETENESS_IS_EXTRACTOR=ralph/completeness-is-extractor.sh
+COMPLETENESS_IS_LIST=ralph/completeness-is-list.json
+COMPLETENESS_EVIDENCE=ralph/completeness-evidence.json
 ITER_TIMEOUT=1800
 SLEEP_BETWEEN=5
 
@@ -48,6 +54,12 @@ fi
 
 if ! command -v claude >/dev/null 2>&1; then
   echo "ERROR: claude CLI not found." >&2
+  exit 1
+fi
+
+if [ ! -x "$COMPLETENESS_IS_EXTRACTOR" ]; then
+  echo "ERROR: $COMPLETENESS_IS_EXTRACTOR not found or not executable." >&2
+  echo "Run /playbook:scaffold-ralph again after updating templates." >&2
   exit 1
 fi
 
@@ -86,6 +98,9 @@ count_prd_entries() {
 count_prd_built() {
   python3 -c "import json; print(sum(1 for x in json.load(open('$PRD')) if x.get('passes', False)))"
 }
+count_is_entities() {
+  python3 -c "import json; d=json.load(open('$COMPLETENESS_IS_LIST')); print(sum(len(d.get(k, [])) for k in ('apiEndpoints','serverActions','uiPages')))"
+}
 
 TOTAL_START=$(count_prd_entries)
 BUILT_START=$(count_prd_built)
@@ -95,6 +110,9 @@ echo "Ralph completeness loop — catch missing features (OUGHT vs IS)"
 echo "  prd:             $PRD  ($TOTAL_START entries, $BUILT_START built)"
 echo "  report:          $COMPLETENESS_REPORT"
 echo "  progress:        $COMPLETENESS_PROGRESS"
+echo "  extractor:       $COMPLETENESS_IS_EXTRACTOR"
+echo "  is list:         $COMPLETENESS_IS_LIST"
+echo "  evidence:        $COMPLETENESS_EVIDENCE"
 echo "  model:           $COMPLETENESS_MODEL"
 echo "  max iter:        $MAX_ITER"
 echo "  skip rebuild:    $SKIP_REBUILD"
@@ -114,17 +132,29 @@ for i in $(seq 1 "$MAX_ITER"); do
   echo "═══ completeness iter $i/$MAX_ITER — prd: $CURRENT_TOTAL entries ($CURRENT_BUILT built) ══"
   echo ""
 
+  echo "[completeness] refreshing deterministic IS list..."
+  set +e
+  "$COMPLETENESS_IS_EXTRACTOR" "$COMPLETENESS_IS_LIST" "$COMPLETENESS_EVIDENCE"
+  EXTRACT_EXIT=$?
+  set -e
+  if [ "$EXTRACT_EXIT" -ne 0 ]; then
+    echo "[completeness] extractor failed ($EXTRACT_EXIT). Stopping." >&2
+    exit 2
+  fi
+  CURRENT_IS=$(count_is_entities)
+
   RECENT_COMMITS=$(git log --grep='^COMPLETENESS:' -n 10 --format='%H%n%ad%n%B---' --date=short 2>/dev/null || echo '(no COMPLETENESS commits yet)')
 
-  PROMPT="@ralph/harden-completeness-prompt.md @CLAUDE.md @$PRD @$COMPLETENESS_REPORT @$COMPLETENESS_PROGRESS
+  PROMPT="@ralph/harden-completeness-prompt.md @CLAUDE.md @$PRD @$COMPLETENESS_REPORT @$COMPLETENESS_PROGRESS @$COMPLETENESS_IS_LIST @$COMPLETENESS_EVIDENCE
 
 ITERATION: $i of $MAX_ITER
 PRD ENTRIES: $CURRENT_TOTAL  (BUILT: $CURRENT_BUILT)
+IS ENTITIES: $CURRENT_IS
 Previous COMPLETENESS commits:
 $RECENT_COMMITS
 
 Your job: detect features PROMISED by the PRD but MISSING from the running app.
-1. Invoke the feature-census skill to extract the IS list (what's actually built).
+1. Use only $COMPLETENESS_IS_LIST + $COMPLETENESS_EVIDENCE as the authoritative IS list.
 2. Compare against $PRD (the OUGHT list).
 3. For each missing feature: write a full story entry (id, category, description,
    behavior, ui_details, data_model, tests) and APPEND to $PRD with passes:false.

@@ -40,18 +40,21 @@ up in the next pass.
 3. Skim the last 5 COMPLETENESS commits. They tell you what's already been
    appended in prior passes.
 
-### 2. Extract the IS list (what's actually running)
+### 2. Read the deterministic IS list (what's actually built)
 
-Invoke the `feature-census` skill on the running app. This produces a
-3-layer extraction:
-- Layer 1: code extraction (handlers, state, API calls, routes, UI elements)
-- Layer 2: library enrichment (what's configured vs available)
-- Layer 3: runtime crawl (Playwright accessibility tree, visible interactions)
+The orchestrator runs `ralph/completeness-is-extractor.sh` before every
+iteration. It writes:
 
-Output location: `feature-census/<module>/CENSUS.md` + underlying JSON files.
+- `ralph/completeness-is-list.json` — canonical entities:
+  `apiEndpoints`, `serverActions`, `uiPages`, `routeHandlers`
+- `ralph/completeness-evidence.json` — deterministic supporting evidence:
+  fitness checks, dead-code signals, warnings, discovered roots
 
-If a prior census is recent (< 1 day old) and the codebase hasn't changed
-significantly since, you may reuse it. Otherwise, run it fresh.
+These files are the ONLY authoritative IS source for this loop.
+
+You MUST NOT invoke `feature-census` here.
+You MUST NOT search the codebase to rediscover what exists.
+You MUST treat the extractor output as truth for IS.
 
 ### 3. Extract the OUGHT list (what the PRD promises)
 
@@ -71,16 +74,20 @@ Typical PRD sources:
 ### 4. Compute OUGHT − IS
 
 For each feature in OUGHT, check whether an equivalent capability exists
-in IS. "Equivalent" allows fuzzy matching:
+in `ralph/completeness-is-list.json`. "Equivalent" allows limited semantic
+matching:
 - Same route / page / component name
 - Same behavior described in different words
 - Same user story exercised in a different UI flow
 
 A feature is MISSING if:
-- No route/page/handler implements it
-- It's in IS but marked CODE-ONLY (dead code, never reached at runtime)
+- No deterministic entity supports it
+- It's in IS but marked unreachable / dead by deterministic evidence
 - It's partially implemented (e.g. "user can reset password" is listed but
   only the request step exists, no confirmation flow)
+
+When `ralph/completeness-evidence.json` reports a failing fitness check,
+you may use that as deterministic evidence of partial implementation.
 
 ### 5. For each missing feature: write a complete story entry
 
@@ -121,7 +128,7 @@ COMPLETENESS: appended N features — <short summary>
 
 <list of appended story IDs with one-line descriptions>
 
-Detection source: <prd.json vs feature-census output date>
+Detection source: <prd.json vs completeness-is-list.json timestamp>
 ```
 
 ### 7. Update completeness-progress.txt
@@ -130,7 +137,7 @@ Append:
 ```
 ## <ISO timestamp> — iter <N>
 - OUGHT count:     <total PRD entries>
-- IS count:        <features found by census>
+- IS count:        <entities found by completeness extractor>
 - Missing found:   <count>
 - Appended to prd: <count>
 - Patterns noticed: <any recurring miss-types>
@@ -156,8 +163,8 @@ be logged and the iteration will retry.
 
 Emit `<promise>ABORT</promise>` when:
 
-1. **`feature-census` skill is unavailable or fails.** Don't fall back to
-   guessing what's built — that defeats the purpose.
+1. **The deterministic extractor outputs are missing or invalid.** Don't
+   fall back to guessing what's built — that defeats the purpose.
 
 2. **The PRD source is missing or ambiguous** (no `PRD.md`, no
    `.planning/REQUIREMENTS.md`, and `ralph/prd.json` is the only OUGHT
@@ -197,7 +204,7 @@ Emit `<promise>ABORT</promise>` when:
 
 - Every capability in the PRD text has a matching entry in `ralph/prd.json`.
 - Every `ralph/prd.json` entry with `passes:true` has a matching capability
-  in the feature-census output.
+  in `ralph/completeness-is-list.json`.
 - No spec-ambiguous features remain un-noted (either they're resolved and
   appended, or marked `"blocked_on_spec": true` for human attention).
 

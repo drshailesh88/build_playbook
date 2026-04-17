@@ -29,7 +29,9 @@ In the target app's `ralph/` directory:
 | `ralph/build.sh` | Build loop. Invokes Claude Opus 4.6. One feature per iteration. Parses `<promise>NEXT\|COMPLETE\|ABORT</promise>`. Reads `ralph/prd.json`, `ralph/build-prompt.md`, `ralph/progress.txt`. Default 999 iterations, 30-minute per-iter timeout. |
 | `ralph/qa.sh` | Verify loop. Invokes Codex with dual-account failover. Picks first `passes:true` feature not yet `qa_tested:true`. Fixes bugs in code (never tests), commits with `QA:` prefix, flips `qa_tested:true`. |
 | `ralph/harden.sh` | Harden loop. Claude Sonnet 4.6 kills surviving mutants per module. Reads `.quality/state.json` for work source. Writes `ralph/harden-report.json`. Commit prefix `HARDEN:`. Model override via `HARDEN_MODEL` env var. |
-| `ralph/harden-completeness.sh` | Completeness loop. Claude Opus 4.6 detects features promised by the PRD but missing from the running app (via `feature-census` skill), and appends them back to `ralph/prd.json`. Then triggers build + qa automatically. Catches the "42 missing features" class of bug. Commit prefix `COMPLETENESS:`. |
+| `ralph/harden-completeness.sh` | Completeness loop. Claude Opus 4.6 detects features promised by the PRD but missing from the running app using deterministic extractor output (`ralph/completeness-is-list.json` + `ralph/completeness-evidence.json`), and appends them back to `ralph/prd.json`. Then triggers build + qa automatically. Commit prefix `COMPLETENESS:`. |
+| `ralph/completeness-is-extractor.sh` | Deterministic pre-pass. Runs `node ./qa/completeness/extract-is.mjs` and writes `ralph/completeness-is-list.json` plus `ralph/completeness-evidence.json` before each completeness iteration. |
+| `ralph/specmatic-verify.sh` | Optional Specmatic wrapper. Resolves or generates an OpenAPI spec, runs `specmatic test` against the running app, and writes `ralph/specmatic-report.json`. |
 | `ralph/harden-adversarial.sh` | Red-team loop. Codex with dual-account failover. Systematically attacks every `qa_tested:true` feature using a 7-category attack catalog (injection, auth, race, resource, state, UX, info leakage). Commit prefix `RED:`. |
 | `ralph/harden-drift.sh` | Drift loop. Claude Sonnet 4.6 runs all contract acceptance tests (`.quality/contracts/*/acceptance.spec.ts`) and fixes source code to match any failing contract. Contracts are locked — code bends to match them, never the other way. Commit prefix `DRIFT:`. |
 | `ralph/harden-security.sh` | Security loop. Codex with dual-account failover. Systematic pass through OWASP Top 10 (2021) — A01..A10, one category per iteration. Override categories via `OWASP_CATEGORIES=A01,A03,A07` env var. Commit prefix `SEC:`. |
@@ -37,7 +39,7 @@ In the target app's `ralph/` directory:
 | `ralph/build-prompt.template.md` | Build agent instructions. Rename to `build-prompt.md` after customizing. |
 | `ralph/qa-prompt.template.md` | QA agent instructions. Rename to `qa-prompt.md` after customizing. |
 | `ralph/harden-prompt.template.md` | Harden (mutation-killer) agent instructions. Reads Stryker surviving-mutants report; adds tests, never weakens existing ones. Rename to `harden-prompt.md`. |
-| `ralph/harden-completeness-prompt.template.md` | Completeness agent instructions. Runs feature-census, diffs vs PRD, writes full story entries for missing features. APPEND-only to `prd.json`. Rename to `harden-completeness-prompt.md`. |
+| `ralph/harden-completeness-prompt.template.md` | Completeness agent instructions. Reads deterministic IS files from the extractor, diffs vs PRD, writes full story entries for missing features. APPEND-only to `prd.json`. Rename to `harden-completeness-prompt.md`. |
 | `ralph/harden-adversarial-prompt.template.md` | Red-team agent instructions. Full 7-category attack catalog; fixes bugs in source only, adds regression tests. Rename to `harden-adversarial-prompt.md`. |
 | `ralph/harden-drift-prompt.template.md` | Drift agent instructions. Fixes source to match locked contracts; never touches contract files. Rename to `harden-drift-prompt.md`. |
 | `ralph/harden-security-prompt.template.md` | Security agent instructions. OWASP Top 10 category table with specific patterns per code. Rename to `harden-security-prompt.md`. |
@@ -118,6 +120,8 @@ const TEMPLATE_MAP: Array<[string, string]> = [
 
   // Tier 3 — Completeness + Stress + Monitor (standalone until runtime-proven)
   ["harden-completeness.sh", "harden-completeness.sh"],
+  ["completeness-is-extractor.sh", "completeness-is-extractor.sh"],
+  ["specmatic-verify.sh", "specmatic-verify.sh"],
   ["harden-completeness-prompt.template.md", "harden-completeness-prompt.template.md"],
   ["harden-adversarial.sh", "harden-adversarial.sh"],
   ["harden-adversarial-prompt.template.md", "harden-adversarial-prompt.template.md"],
@@ -197,11 +201,13 @@ Next (required before running):
    BUILD_SKIP=1 QA_SKIP=1 ./ralph/run.sh    # run just the harden phase
 
    Standalone runs (for debugging individual loops):
+   ./ralph/completeness-is-extractor.sh    # refresh deterministic IS evidence
    ./ralph/harden.sh 10                 # just harden, 10 iters
    ./ralph/harden-completeness.sh 5     # detect + fill missing features
    ./ralph/harden-adversarial.sh 10     # red-team
    ./ralph/harden-drift.sh 10           # contract drift
    ./ralph/harden-security.sh 5         # OWASP systematic
+   ./ralph/specmatic-verify.sh          # optional OpenAPI contract verification
    OWASP_CATEGORIES=A01,A03 ./ralph/harden-security.sh 2   # subset
 
    Model overrides (A/B testing):
