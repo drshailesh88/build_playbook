@@ -245,7 +245,7 @@ describe("runReleaseGates", () => {
       config: cfg(releaseScenarioRunner({ stryker: "pass", vitest: "pass" })),
       axe: { routes: ["/"] },
       visual: { routes: ["/"] },
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation"],
+      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
     });
     expect(result.verdict).toBe("GREEN");
     expect(result.failedGates).toEqual([]);
@@ -258,10 +258,25 @@ describe("runReleaseGates", () => {
 
     const result = await runReleaseGates({
       config: cfg(releaseScenarioRunner({ vitest: "fail" })),
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation"],
+      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
     });
     expect(result.verdict).toBe("RED");
     expect(result.verdictReason).toContain("vitest-all");
+  });
+
+  test("RED verdict when completeness fitness fails", async () => {
+    await fs.mkdir(join(root, "src", "app", "api", "broken"), { recursive: true });
+    await fs.writeFile(join(root, "src", "app", "api", "broken", "route.ts"), "export const nope = true;\n");
+    await fs.mkdir(join(root, ".next", "static", "chunks"), { recursive: true });
+    await fs.writeFile(join(root, ".next", "static", "chunks", "main.js"), Buffer.alloc(1000));
+    await fs.writeFile(join(root, ".quality", "policies", "lock-manifest.json"), JSON.stringify({ schema_version: 1, files: {} }));
+
+    const result = await runReleaseGates({
+      config: cfg(releaseScenarioRunner()),
+      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
+    });
+    expect(result.verdict).toBe("RED");
+    expect(result.verdictReason).toContain("completeness-fitness");
   });
 
   test("WARN verdict when only secondary gate fails", async () => {
@@ -272,7 +287,7 @@ describe("runReleaseGates", () => {
     const result = await runReleaseGates({
       config: cfg(releaseScenarioRunner()),
       bundleSize: { buildDir: ".next/static", totalMaxBytes: 100 },
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation"],
+      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
     });
     // bundle-size fails but it's a secondary (warn) gate
     expect(result.warnGates).toContain("bundle-size");
@@ -292,7 +307,7 @@ describe("runReleaseGates", () => {
 
     const result = await runReleaseGates({
       config: cfg(releaseScenarioRunner()),
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation"],
+      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
     });
     expect(result.verdict).toBe("HARD");
     expect(result.verdictReason).toContain("contract-hash-verify");
@@ -308,7 +323,9 @@ describe("runReleaseGates", () => {
         "playwright-full",
         "axe-accessibility",
         "visual-regression",
+        "completeness-fitness",
         "api-contract-validation",
+        "specmatic-contract",
         "migration-safety",
         "bundle-size",
         "lighthouse-ci",
@@ -339,7 +356,7 @@ describe("runReleaseGates", () => {
 
     const result = await runReleaseGates({
       config: cfg(slowRunner),
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation"],
+      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
     });
     expect(result.verdict).toBe("GREEN");
 
@@ -361,7 +378,7 @@ describe("runReleaseGates", () => {
       config: cfg(releaseScenarioRunner()),
       skipGates: [
         "stryker-full", "vitest-all", "playwright-full",
-        "axe-accessibility", "visual-regression", "api-contract-validation",
+        "axe-accessibility", "visual-regression", "completeness-fitness", "api-contract-validation", "specmatic-contract",
         "migration-safety", "bundle-size", "lighthouse-ci",
         "npm-audit", "license-compliance", "dependency-freshness",
       ],

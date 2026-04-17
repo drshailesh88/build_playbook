@@ -3,18 +3,21 @@
  *
  * Parallelization groups:
  *   1. Stryker full           — alone first (heaviest)
- *   2-13. Everything else     — concurrent (Vitest full, Playwright full,
- *                               axe, visual, api-contract, migration-safety,
- *                               bundle-size, lighthouse, npm audit, license,
- *                               dependency-freshness)
- *   14. Contract hash verify  — alone last (integrity re-check after all
+ *   2-15. Everything else     — concurrent (Vitest full, Playwright full,
+ *                               axe, visual, completeness-fitness,
+ *                               api-contract, specmatic-contract,
+ *                               migration-safety, bundle-size, lighthouse,
+ *                               npm audit, license, dependency-freshness)
+ *   16. Contract hash verify  — alone last (integrity re-check after all
  *                               data-producing gates ran)
  *
  * Verdict:
  *   HARD   — contract hash fails (integrity breach)
- *   RED    — any of gates 1-5 (Stryker, Vitest, Playwright, a11y, visual)
- *            fail
- *   WARN   — any of gates 6-13 fail (non-blocking quality signals)
+ *   RED    — any primary gate fails (Stryker, Vitest, Playwright, a11y,
+ *            visual, completeness-fitness)
+ *   WARN   — any secondary gate fails (api-contract, specmatic-contract,
+ *            migration-safety, bundle-size, lighthouse, npm audit, license,
+ *            dependency-freshness)
  *   GREEN  — everything passes
  *
  * Release gates that need config (routes, baseUrl, thresholds) are
@@ -37,12 +40,14 @@ import { runStrykerFullGate, STRYKER_FULL_GATE_ID } from "./stryker-full.js";
 import { runAxeAccessibilityGate, AXE_ACCESSIBILITY_GATE_ID } from "./axe-accessibility.js";
 import { runVisualRegressionGate, VISUAL_REGRESSION_GATE_ID } from "./visual-regression.js";
 import { runApiContractValidationGate, API_CONTRACT_VALIDATION_GATE_ID } from "./api-contract-validation.js";
+import { runCompletenessFitnessGate, COMPLETENESS_FITNESS_GATE_ID } from "./completeness-fitness.js";
 import { runMigrationSafetyGate, MIGRATION_SAFETY_GATE_ID } from "./migration-safety.js";
 import { runBundleSizeGate, BUNDLE_SIZE_GATE_ID } from "./bundle-size.js";
 import { runLighthouseCiGate, LIGHTHOUSE_CI_GATE_ID } from "./lighthouse-ci.js";
 import { runNpmAuditGate, NPM_AUDIT_GATE_ID } from "./npm-audit.js";
 import { runLicenseComplianceGate, LICENSE_COMPLIANCE_GATE_ID } from "./license-compliance.js";
 import { runDependencyFreshnessGate, DEPENDENCY_FRESHNESS_GATE_ID } from "./dependency-freshness.js";
+import { runSpecmaticContractGate, SPECMATIC_CONTRACT_GATE_ID } from "./specmatic-contract.js";
 import type { GateResult, TierConfig } from "../types.js";
 import type { LighthouseThresholds } from "./lighthouse-ci.js";
 import type { VisualViewport } from "./visual-regression.js";
@@ -71,6 +76,15 @@ export interface ReleaseRunnerInput {
   apiContract?: {
     baseUrl?: string;
     fetch?: FetchFn;
+  };
+  completeness?: {
+    enabled?: boolean;
+  };
+  specmatic?: {
+    baseUrl?: string;
+    specPath?: string;
+    generateOpenApiIfMissing?: boolean;
+    required?: boolean;
   };
   migrations?: {
     migrationsDir?: string;
@@ -117,9 +131,11 @@ const PRIMARY_GATES: readonly string[] = [
   PLAYWRIGHT_FULL_GATE_ID,
   AXE_ACCESSIBILITY_GATE_ID,
   VISUAL_REGRESSION_GATE_ID,
+  COMPLETENESS_FITNESS_GATE_ID,
 ];
 const SECONDARY_GATES: readonly string[] = [
   API_CONTRACT_VALIDATION_GATE_ID,
+  SPECMATIC_CONTRACT_GATE_ID,
   MIGRATION_SAFETY_GATE_ID,
   BUNDLE_SIZE_GATE_ID,
   LIGHTHOUSE_CI_GATE_ID,
@@ -189,12 +205,32 @@ export async function runReleaseGates(
       }),
     );
   }
+  if (input.completeness?.enabled !== false && !skip.has(COMPLETENESS_FITNESS_GATE_ID)) {
+    concurrent.push(
+      runCompletenessFitnessGate({
+        config: baseCfg,
+      }),
+    );
+  }
   if (!skip.has(API_CONTRACT_VALIDATION_GATE_ID)) {
     concurrent.push(
       runApiContractValidationGate({
         config: baseCfg,
         ...(input.apiContract?.baseUrl !== undefined ? { baseUrl: input.apiContract.baseUrl } : {}),
         ...(input.apiContract?.fetch !== undefined ? { fetch: input.apiContract.fetch } : {}),
+      }),
+    );
+  }
+  if (!skip.has(SPECMATIC_CONTRACT_GATE_ID)) {
+    concurrent.push(
+      runSpecmaticContractGate({
+        config: baseCfg,
+        ...(input.specmatic?.baseUrl !== undefined ? { baseUrl: input.specmatic.baseUrl } : {}),
+        ...(input.specmatic?.specPath !== undefined ? { specPath: input.specmatic.specPath } : {}),
+        ...(input.specmatic?.generateOpenApiIfMissing !== undefined
+          ? { generateOpenApiIfMissing: input.specmatic.generateOpenApiIfMissing }
+          : {}),
+        ...(input.specmatic?.required !== undefined ? { required: input.specmatic.required } : {}),
       }),
     );
   }

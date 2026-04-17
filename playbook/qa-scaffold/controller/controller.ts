@@ -236,6 +236,8 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
           }
         : {}),
       ...(releaseConfig.apiContract !== undefined ? { apiContract: releaseConfig.apiContract } : {}),
+      ...(releaseConfig.completeness !== undefined ? { completeness: releaseConfig.completeness } : {}),
+      ...(releaseConfig.specmatic !== undefined ? { specmatic: releaseConfig.specmatic } : {}),
       ...(releaseConfig.bundleSize !== undefined ? { bundleSize: releaseConfig.bundleSize } : {}),
       ...(releaseConfig.lighthouse !== undefined ? { lighthouse: releaseConfig.lighthouse } : {}),
       ...(releaseConfig.license !== undefined ? { license: releaseConfig.license } : {}),
@@ -347,6 +349,8 @@ interface ReleasePolicyFile {
   axe?: { routes?: string[]; baseUrl?: string; minSeverity?: "minor" | "moderate" | "serious" | "critical" };
   visual?: { routes?: string[]; baseUrl?: string };
   apiContract?: { baseUrl?: string };
+  completeness?: { enabled?: boolean };
+  specmatic?: { baseUrl?: string; specPath?: string; generateOpenApiIfMissing?: boolean; required?: boolean };
   bundleSize?: { buildDir?: string; thresholds?: Record<string, number>; totalMaxBytes?: number; defaultMaxBytes?: number };
   lighthouse?: { thresholds?: Record<string, number>; configPath?: string };
   license?: { forbidden?: string[]; failOnUnknown?: boolean };

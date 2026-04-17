@@ -20,16 +20,19 @@ Input: `$ARGUMENTS` — optional flags.
 5. **Merges tier hints** into `.quality/policies/tiers.yaml` so auth and
    payment paths are automatically tagged `critical_75`.
 6. **Scaffolds `.quality/`** with `contracts/`, `policies/`, `runs/` subdirs.
-7. **Writes `providers.yaml`** (Claude enabled; Codex/Gemini scaffolded but
+7. **Installs deterministic completeness + Specmatic release-gate code**
+   inside `qa/` so `qa-run` can enforce completeness fitness and, when an
+   OpenAPI spec exists, Specmatic contract verification.
+8. **Writes `providers.yaml`** (Claude enabled; Codex/Gemini scaffolded but
    disabled pending Seatbelt wrapper).
-8. **Writes `thresholds.yaml`** with defaults (`max_attempts: 10`,
+9. **Writes `thresholds.yaml`** with defaults (`max_attempts: 10`,
    `plateau_window: 3`, per-tool timeouts).
-9. **Generates `lock-manifest.json`** — SHA256 of every locked config file.
-10. **Installs enforcement templates** — `.claude/settings.json`,
+10. **Generates `lock-manifest.json`** — SHA256 of every locked config file.
+11. **Installs enforcement templates** — `.claude/settings.json`,
     `.claude/hooks/block-locked-paths.sh`, `.husky/pre-commit`.
-11. **Runs `npm install -D`** for queued dev dependencies
+12. **Runs `npm install -D`** for queued dev dependencies
     (`@clerk/testing`, `msw`, etc.).
-12. **Writes `.quality/install-report.md`** summarizing detection + install.
+13. **Writes `.quality/install-report.md`** summarizing detection + install.
 
 ## Flags
 
@@ -68,7 +71,9 @@ directory; Claude will run the installer script directly.
    on this `.quality/` tree to read mutation baselines and verify scores,
    so `/playbook:install-qa-harness` must run FIRST, then
    `/playbook:scaffold-ralph`. See `/playbook:scaffold-ralph` for the
-   full file manifest (currently 17 Ralph template files).
+   full file manifest (currently 19 Ralph template files).
+7. If your app has an OpenAPI spec, `qa-run` will also execute the
+   integrated Specmatic release gate. Without a spec, that gate skips.
 
 ## Rules
 
