@@ -8,11 +8,12 @@ description: Always-loaded development workflow rules. Applies to how work is pl
 
 Before implementing anything, check three layers of knowledge in order:
 
-1. **Runtime/stdlib** — Does the language, framework, or platform already handle this?
-2. **Ecosystem** — Is there a well-maintained package or established pattern?
-3. **First principles** — Only build from scratch after layers 1 and 2 are exhausted
+1. **Context7 (current docs)** — Before writing ANY library/framework API call, verify the signature with Context7 (`npx ctx7@latest library` then `npx ctx7@latest docs`). Training data goes stale. Docs don't.
+2. **Runtime/stdlib** — Does the language, framework, or platform already handle this?
+3. **Ecosystem** — Is there a well-maintained package or established pattern?
+4. **First principles** — Only build from scratch after layers 1-3 are exhausted
 
-Spend 5 minutes researching before spending 50 minutes building.
+Spend 5 minutes verifying before spending 50 minutes debugging a hallucinated API.
 
 ## Feature Implementation Phases
 
