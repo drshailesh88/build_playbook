@@ -1,0 +1,59 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/gateguard-fact-force.sh\"",
+            "description": "GateGuard: investigate callers before first edit to a file"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/config-protection.sh\"",
+            "description": "Config Protection: block weakening of linter/TS configs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/careful-check.sh\"",
+            "description": "Careful: warn before destructive commands"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/quality-gate.sh\"",
+            "description": "Quality Gate: format + typecheck after every edit"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/session-end.sh\"",
+            "description": "Session End: save state + learnings for next session"
+          }
+        ]
+      }
+    ]
+  }
+}
