@@ -15,7 +15,9 @@ echo ""
 # Phase 1: Commands
 # ─────────────────────────────────────
 mkdir -p "$CLAUDE_DIR/commands/playbook"
-cp "$SCRIPT_DIR/commands/"*.md "$CLAUDE_DIR/commands/playbook/"
+# Remove stale symlinks before copying
+find "$CLAUDE_DIR/commands/playbook" -maxdepth 1 -type l -delete 2>/dev/null || true
+rsync -a --delete "$SCRIPT_DIR/commands/" "$CLAUDE_DIR/commands/playbook/"
 CMD_COUNT=$(ls "$SCRIPT_DIR/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 echo "  $CMD_COUNT commands → ~/.claude/commands/playbook/"
 
