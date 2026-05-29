@@ -218,7 +218,16 @@ completeness-progress.txt.
 
 If you cannot write a valid entry (e.g., the PRD source is too ambiguous
 for proper EARS criteria), set `"blocked_on_spec": true` and describe
-what's missing. Append the entry anyway so the human can resolve it.
+what's missing in a `"blocked_reason"` field. Append the entry anyway
+so the human can see it — but the builder will SKIP entries with
+`blocked_on_spec: true`. They will NOT be built until a human resolves
+the ambiguity, removes `blocked_on_spec`, and re-runs grilling or
+updates the PRD.
+
+**Critical for high-risk categories:** If a `blocked_on_spec` entry has
+category `auth`, `payments`, or `user_data`, also set
+`"blocked_severity": "critical"` — these MUST NOT be built from
+ambiguous specs under any circumstances.
 
 ### 5c. Flag contract requirements
 
@@ -264,7 +273,7 @@ Append:
 - OUGHT count:     <total PRD entries>
 - IS count:        <entities found by completeness extractor>
 - Missing found:   <count>
-- Appended to prd: <count>
+- Appended to prd: <count> (<N> buildable, <M> blocked_on_spec)
 - Checkpoint validation: <all passed / N failures fixed>
 - Patterns noticed: <any recurring miss-types>
 ```
@@ -274,6 +283,14 @@ If any appended stories have `contract_needed: true`, add:
 ### Contract Requirements (from this iteration)
 - <story-id> — category: <cat> → <HARD/WARN> gate
   Action: /playbook:contract-pack <story-id>
+```
+
+If any appended stories have `blocked_on_spec: true`, add:
+```
+### Blocked on Spec (requires human resolution)
+- <story-id> — category: <cat> — missing: <what's ambiguous>
+  The builder will SKIP this entry until a human resolves it.
+  Action: Re-grill this feature, update the PRD, then remove blocked_on_spec.
 ```
 
 If you spot a recurring gap pattern (e.g. "every CRUD feature is missing

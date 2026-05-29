@@ -31,9 +31,15 @@ Attached in-context:
 ### 2. Pick the next story
 1. Read `ralph/prd.json`. Find the FIRST entry where `"passes": false`.
    Stories are priority-ordered; do not skip or reorder.
-2. If the entry has a `branchName` field, check out that branch first.
+2. **Check for `blocked_on_spec`.** If the entry has `"blocked_on_spec": true`,
+   it was auto-detected by the completeness auditor but lacks sufficient
+   spec detail for safe implementation. Do NOT build it. Skip to the next
+   `passes:false` entry. If ALL remaining entries are `blocked_on_spec`,
+   emit `<promise>ABORT</promise>` with a diagnostic listing each blocked
+   story and what spec detail is missing.
+3. If the entry has a `branchName` field, check out that branch first.
    Otherwise stay on the current branch (usually `main`).
-3. Read the entry's `behavior`, `data_model`, `tests`, `page`, `ui_details`.
+4. Read the entry's `behavior`, `data_model`, `tests`, `page`, `ui_details`.
    These are the spec. Do not invent requirements not listed here.
 
 ### 2b. Parse the structured behavior field
@@ -49,11 +55,20 @@ Read ALL of them before writing any code:
 - **## Out of Scope — DO NOT BUILD THESE** — things the PRD explicitly
   excluded. If you catch yourself building something listed here, STOP
   and undo it. Out-of-scope items are not optional — they are prohibitions.
+  **If this section says "None declared — PRD did not specify exclusions"**,
+  that means the founder never explicitly set boundaries — it does NOT
+  mean "build whatever you want." Stick strictly to the acceptance
+  criteria. Do not add adjacent features, convenience helpers, or
+  "obvious" extensions that aren't in the spec.
 - **## Escalation Conditions — STOP AND ABORT IF** — domain-specific
   triggers that mean you MUST emit `<promise>ABORT</promise>`. These are
   IN ADDITION TO the generic ABORT decision tree below. Read them
   carefully — they encode founder decisions about where the spec's
   assumptions might break.
+  **If this section says "None — all backing decisions are HIGH confidence
+  + EASY reversibility"**, the generic ABORT decision tree below still
+  applies in full. "None" only means no *additional* domain-specific
+  triggers were added.
 - **## Risk Flags** — decision confidence and reversibility metadata.
   If you see `⚠ LOW confidence`, take extra care: write more tests,
   prefer reversible implementations, and consider ABORT if the

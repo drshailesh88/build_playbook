@@ -246,15 +246,43 @@ auditor exactly how to verify this story exists in the running code.]
 
 <HARD-GATE>
 The `behavior` field MUST contain all 7 sections. If the PRD story is
-missing a section, use the appropriate empty marker:
+missing a section, the default depends on the story's risk profile.
+
+**Determine the story's risk tier first:**
+- **HIGH-RISK:** category is `auth`, `payments`, `user_data`, OR any
+  backing DEC has HARD reversibility, OR any backing DEC has SYSTEM
+  scope-risk. Also high-risk: stories that touch credentials, tokens,
+  billing, PII, or destructive data operations (even if category is
+  `crud` or `data`).
+- **STANDARD-RISK:** everything else.
+
+Then apply the appropriate default:
 
 - Missing acceptance criteria: COMPILATION BLOCKED (see Step 2 gate)
-- Missing out-of-scope: `## Out of Scope — DO NOT BUILD THESE\nNone declared.`
-- Missing escalation conditions: `## Escalation Conditions — STOP AND ABORT IF\nNone — proceed autonomously.`
+- Missing out-of-scope:
+  - HIGH-RISK: COMPILATION BLOCKED — out-of-scope boundaries are
+    mandatory for auth/payments/user_data stories. The founder must
+    explicitly declare what this feature does NOT do.
+  - STANDARD-RISK: `## Out of Scope — DO NOT BUILD THESE\nNone declared — PRD did not specify exclusions for this story.`
+- Missing escalation conditions:
+  - HIGH-RISK: COMPILATION BLOCKED — escalation conditions are
+    mandatory for stories with HARD reversibility, SYSTEM scope-risk,
+    or auth/payments/user_data categories. The founder must declare
+    when the builder should stop and ask.
+  - STANDARD-RISK: `## Escalation Conditions — STOP AND ABORT IF\nNone — all backing decisions are HIGH confidence + EASY reversibility. Proceed autonomously.`
 - Missing risk flags: Extract from decision-index.md using the DEC-NNN IDs
-- Missing verification anchors: `## Verification Anchors\nNone declared — auditor should verify via acceptance criteria.`
+- Missing verification anchors:
+  - HIGH-RISK: COMPILATION BLOCKED — auditors must have explicit
+    verification targets for high-risk stories.
+  - STANDARD-RISK: `## Verification Anchors\nNone declared — auditor should verify via acceptance criteria.`
 - Missing completeness check: `## Completeness Check\nVerify acceptance criteria pass from the running app.`
 - Missing builder notes: `## Builder Notes\nNone.`
+
+When COMPILATION BLOCKED fires for a missing section, log the story ID
+and the missing section in the manifest's `blocked` array. The compiler
+must NOT silently fill in a permissive default for a high-risk story —
+that converts "the founder didn't think about boundaries" into "the
+founder decided there are no boundaries."
 </HARD-GATE>
 
 #### 4g. The `data_model` field
