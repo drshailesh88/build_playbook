@@ -93,6 +93,40 @@ full creative freedom on HOW to implement within those boundaries:
 Don't ABORT on ambiguity that falls within your implementation discretion.
 Only ABORT when the spec's boundaries themselves are ambiguous.
 
+### 2e. Read contract expectations (if available)
+
+Check for a frozen contract for this story's feature:
+
+```bash
+ls .quality/contracts/*/index.yaml 2>/dev/null
+```
+
+If a contract directory exists whose `index.yaml` `feature` field
+matches this story's module or category, read:
+- `.quality/contracts/{feature}/examples.md` — happy-path scenarios
+- `.quality/contracts/{feature}/counterexamples.md` — forbidden behaviors
+- `.quality/contracts/{feature}/invariants.md` — always-true properties
+
+These are human-approved behavioral expectations written from the
+specification before any code existed. They are richer than EARS
+criteria — they include Given/When/Then with preconditions AND
+system-level effects (not just user-visible outcomes).
+
+Use these to guide your implementation. When EARS criteria say
+"THE SYSTEM SHALL validate credentials" and the contract example
+says "Given a user with email test@example.com, When they submit
+login, Then a JWT is returned AND the session is recorded in the
+audit log AND the refresh token is set as an httpOnly cookie,"
+implement the full behavior.
+
+**You may read:** `examples.md`, `counterexamples.md`, `invariants.md`
+
+**You may NOT read:** `acceptance.spec.ts`, `regressions.spec.ts`
+(locked test files — reading them defeats oracle independence)
+
+If no contract directory exists for this story, skip this step.
+The contract tests will run against your implementation after build.
+
 ### 3. Consult module conventions
 Before writing code, check for `AGENTS.md` in the directories you're about
 to touch. These contain directory-level conventions that override general

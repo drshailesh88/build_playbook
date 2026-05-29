@@ -2,6 +2,8 @@
 
 Read your PRD and project plans, then interview you about every piece of data your app will ever touch. No database jargon. No technical language. Just business questions in plain English that expose every data decision hiding inside your product vision.
 
+**Every decision gets a unique DEC-NNN ID and structured record. These feed into `/write-a-prd` which compiles them — not re-asks them.**
+
 Input: $ARGUMENTS (path to PRD file, GSD requirements file, or "latest" for most recent .planning/ files)
 
 ## Why This Exists
@@ -14,6 +16,17 @@ You know the answers to all of these questions — you just haven't been asked y
 
 ## Process
 
+### Step 0: Load Decision Context
+
+Before anything, check existing decision artifacts:
+```bash
+ls .planning/decision-index.md 2>/dev/null
+ls .planning/CONTEXT.md 2>/dev/null
+ls .planning/grill-log.md 2>/dev/null
+```
+
+If a decision index exists, find the highest DEC-NNN number and continue from there. If not, start from DEC-001 (or coordinate with other commands that may have already started the numbering).
+
 ### Step 1: Load Your Plans
 
 Read everything that describes what you're building:
@@ -22,6 +35,9 @@ Read everything that describes what you're building:
 - GSD REQUIREMENTS.md (if exists)
 - GSD ROADMAP.md (if exists)
 - .planning/decisions/ files (if exist)
+- .planning/grill-log.md (if exists — decisions already made)
+- .planning/decision-index.md (if exists — to continue numbering)
+- .planning/CONTEXT.md (if exists — glossary terms already defined)
 - UBIQUITOUS_LANGUAGE.md (if exists)
 - Feature census documents (if exist)
 - Any competitive analysis or research docs
@@ -42,6 +58,80 @@ Before grilling, show the user what you found:
 > Am I missing anything? Are any of these wrong?"
 
 Wait for confirmation. Add anything the user mentions. Remove anything that's wrong.
+
+## Decision Record Format
+
+Every resolved question becomes a DEC record with full metadata. The data grill produces some of the HIGHEST impact decisions (data model choices are often HARD to reverse), so metadata is critical.
+
+```markdown
+#### DEC-[NNN]: [Short title]
+- **Question:** [The question asked]
+- **Options Considered:**
+  1. [Option A] — [tradeoff]
+  2. [Option B] — [tradeoff]
+- **Selected:** [What the user decided]
+- **Rationale:** [Why, in the user's words]
+- **Rejected:** [Alternatives not chosen, with reasons]
+- **Dependencies:** [DEC-NNN] or "None"
+- **Status:** DECIDED | DEFERRED | REJECTED
+- **Confidence:** HIGH | MEDIUM | LOW
+- **Reversibility:** EASY | MODERATE | HARD
+- **Scope-Risk:** LOCAL | MODULE | SYSTEM
+- **Counterargument:** [Strongest genuine attack on the selected option. What evidence would change this?]
+- **Valid Until:** [YYYY-MM-DD — 6 months for HARD, 12 months for MODERATE, "indefinite" for EASY]
+- **Consequences:**
+  - Enables: [what this unlocks]
+  - Constrains: [what this limits]
+  - Rollback plan: [how to undo, or "N/A"]
+- **Prediction:** [optional — "If this is right, we will see [observable] reach [threshold] by [verify_after date]." Required for HARD reversibility + LOW/MEDIUM confidence.]
+- **Observation Indicators:** [optional — "[metric] — watch for [concern]." Metrics to WATCH but NOT optimize.]
+```
+
+**Data grill note:** Many data decisions are MODERATE or HARD to reverse (changing a data model after launch requires migrations, data backfills, and downstream API changes). Be especially vigilant about flagging LOW confidence + HARD reversibility combinations. Push the user to increase confidence on these.
+
+## Superseding Prior Decisions
+
+If a data decision contradicts or replaces a prior decision:
+1. Create the new DEC record as normal
+2. Add `Supersedes: DEC-[old ID]` to the new record
+3. Update the old DEC's status to `SUPERSEDED by DEC-[new ID]` in the grill-log
+4. Update the decision-index Superseded Decisions table
+
+## The Save Rule
+
+**NEVER rely on conversation context for decisions. ALWAYS write to disk.**
+
+After EVERY 3-5 resolved questions:
+1. Append the new DEC records to `.planning/grill-log.md` (under a "Data Grill" phase heading)
+2. Update `.planning/decision-index.md` with the new rows (include Confidence, Reversibility, Scope-Risk columns)
+3. Update `.planning/CONTEXT.md` if any data entity terms were defined
+
+If you've resolved 3-5 questions and haven't saved, STOP ASKING and SAVE. The data grill can run for hours — if the context window compacts, unsaved decisions are gone forever.
+
+## The Counter Rule
+
+Track decisions since last save. Display a counter:
+> "[DEC-042, DEC-043, DEC-044 captured — saving to disk...]"
+
+## Escape Hatch — Respect User Pushback
+
+If the user pushes back on a question TWICE, stop. Record as DEFERRED with `Reason Deferred: User explicitly deferred after discussion` and move on. First pushback: rephrase or explain why it matters. Second pushback: respect it immediately. Never ask a third time.
+
+## Depth Calibration
+
+Not every decision needs the full record. Use **note** (1-line) for trivial EASY/LOCAL decisions, **tactical** (compact: Question, Selected, Rationale, Status, Confidence, Reversibility, Scope-Risk) for moderate decisions, **standard** (full record) for important decisions, and **deep** (full record + ADR, Prediction required) for HARD reversibility or SYSTEM scope-risk decisions. When in doubt, go one tier higher.
+
+## Parity Enforcement
+
+When presenting options for data decisions:
+- Options must be genuinely distinct (not "do it well" vs "do it worse")
+- Steel-man each option — present the best case for shared references vs separate copies, soft delete vs hard delete, etc.
+- Declare the selection policy BEFORE scoring — state the rule for choosing ("We'll pick the option that [criterion]") before evaluating options
+- Ask: "Is there an approach I haven't considered?"
+
+## Anti-Sycophancy Rules
+
+Never say "That's interesting", "That could work", or "You might consider." Take a position on every answer with a recommendation and reason. State what evidence would change your mind. Challenge vague answers. Name tradeoffs explicitly.
 
 ### Step 3: Grill — One Data Subject at a Time
 
@@ -206,22 +296,36 @@ _Anything that came up during grilling that the user wants to think about more._
 
 Save to: `.planning/data-requirements.md`
 
-### Step 7: Handoff
+### Step 7: Verify Decision Artifacts
+
+If you followed the Save Rule (saving every 3-5 decisions during the grill), the artifacts should already be up to date. This step is a VERIFICATION pass, not a bulk write.
+
+1. **Verify `.planning/grill-log.md`** has ALL DEC records from this session (under "Data Grill" heading)
+2. **Verify `.planning/decision-index.md`** has all rows with Confidence, Reversibility, and Scope-Risk columns filled
+3. **Verify `.planning/CONTEXT.md`** has all data entity terms in the glossary
+4. **Check the Risk Dashboard** in decision-index.md — flag any LOW confidence + HARD reversibility combinations
+
+Every answer in Step 3 that resolves a question should have been recorded as a DEC-NNN. If you answered 30 questions, there should be ~30 DEC records. If the count doesn't match, find the gap and save the missing records.
+
+### Step 8: Handoff
 
 Tell the user:
 
 > "Data requirements captured in `.planning/data-requirements.md`.
 >
-> I found [N] data subjects with [N] relationships between them.
+> [N] decisions captured (DEC-[start] to DEC-[end]).
+> [N] data subjects with [N] relationships between them.
 > [N] future-proofing decisions were made.
 > [N] open questions need your thought.
+>
+> Decision index updated. `/write-a-prd` will compile these into the PRD.
 >
 > When you're ready, run `/db-architect` — it will read this document and design the full database. You won't need to answer any more questions. The database engineer has everything it needs."
 
 Commit:
 ```bash
-git add .planning/data-requirements.md
-git commit -m "data: capture data requirements from grilling session"
+git add .planning/data-requirements.md .planning/decision-index.md .planning/grill-log.md .planning/CONTEXT.md
+git commit -m "data: capture data requirements with DEC-NNN decision records"
 ```
 
 ## Language Rules

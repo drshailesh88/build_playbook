@@ -80,6 +80,14 @@ npm run lint --if-present                 # lint — must stay green
 **Never weaken an existing test to "kill" a mutant.** Add new tests. If an
 existing test is wrong in a way that blocks you, emit ABORT.
 
+**Property-based testing preferred for boundary mutants.** When a surviving
+mutant is numeric / boundary / ordering / array-length (e.g. `>` → `>=`,
+`length - 1` → `length`), prefer a property-based test (fast-check or
+similar) over a single hand-picked assertion. Properties explore adjacent
+mutants too and are harder to game than a single example.
+<!-- CUSTOMIZE: if your project uses fast-check, note the naming convention
+(e.g. `*.property.test.ts`) and the run command here. -->
+
 ### 5. DO NOT modify source unless a mutant reveals a real bug (rare)
 
 99% of the time, a surviving mutant means your tests are incomplete. Add
@@ -144,6 +152,7 @@ when:
 2. **Killing a mutant would require editing a LOCKED file**:
    <!-- CUSTOMIZE: extend this list with any project-specific locked paths -->
    - `.quality/**`
+   - `qa/**` (QA harness — if installed by /playbook:install-qa-harness)
    - `e2e/contracts/**`
    - `vitest.config.ts`, `playwright.config.ts`, `tsconfig.json`
    - `stryker.config.json`, `stryker.conf.*` (any variant)
@@ -175,6 +184,7 @@ when:
 - **Locked files you may NEVER modify** (repeated for clarity):
   <!-- CUSTOMIZE: app-specific additions -->
   - `.quality/**`
+  - `qa/**` (QA harness)
   - `e2e/contracts/**`
   - `vitest.config.ts`, `playwright.config.ts`, `stryker.config.json`
   - `tsconfig.json`, `.claude/settings.json`, `.claude/hooks/**`

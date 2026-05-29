@@ -181,6 +181,71 @@ review by setting `"blocked_on_spec": true` and describing what's missing.
 Append the new stories to `ralph/prd.json`. Preserve valid JSON. Do NOT
 modify or reorder existing entries.
 
+### 5b. Validate appended entry (checkpoint gate)
+
+After writing each new story entry, validate it BEFORE appending to
+prd.json. Apply the same validation that prd-to-ralph Step 4j uses:
+
+For each entry:
+1. `behavior` field contains all 7 required sections:
+   - `## Acceptance Criteria`
+   - `## Out of Scope`
+   - `## Escalation Conditions`
+   - `## Risk Flags`
+   - `## Verification Anchors`
+   - `## Completeness Check`
+   - `## Builder Notes`
+
+2. At least one acceptance criterion uses EARS format (contains
+   `SHALL` keyword)
+
+3. `fail_to_pass` is non-empty and every entry follows the
+   `{module}.{feature}.{behavior}` naming convention (dot-separated,
+   final segment in kebab-case)
+
+4. Every test in `tests.unit`, `tests.e2e`, and `tests.edge_cases`
+   is a structured object with `name`, `description`, and `source`
+   fields (not bare strings)
+
+5. `fail_to_pass` entries correspond to test names:
+   - Each unit test `name` appears in `fail_to_pass`
+   - Each e2e test `name` appears prefixed with `e2e.`
+   - Each edge case `name` appears prefixed with `edge.`
+
+If any entry fails validation, fix it before appending. Do not append
+invalid entries to prd.json. Log validation failures in
+completeness-progress.txt.
+
+If you cannot write a valid entry (e.g., the PRD source is too ambiguous
+for proper EARS criteria), set `"blocked_on_spec": true` and describe
+what's missing. Append the entry anyway so the human can resolve it.
+
+### 5c. Flag contract requirements
+
+For each appended story, determine whether it needs a frozen contract
+for the release gates (`/playbook:qa-run`):
+
+| Category | Contract Gate | Action |
+|----------|--------------|--------|
+| `auth`, `payments`, `user_data` | HARD — qa-run blocks without contract | `contract_needed: true, contract_category_gate: "hard"` |
+| `business_logic`, `ui` | WARN — qa-run warns without contract | `contract_needed: true, contract_category_gate: "warn"` |
+| Any with HARD reversibility or SYSTEM scope-risk | WARN | `contract_needed: true, contract_category_gate: "warn"` |
+| `data`, `settings`, `interaction` (LOW risk) | None | `contract_needed: false` |
+
+Add these fields to each appended entry:
+
+```json
+"contract_needed": true,
+"contract_category_gate": "hard",
+"contract_note": "Category auth — qa-run requires frozen contract. Run: /playbook:contract-pack <story-id>"
+```
+
+This ensures the human knows to run `/playbook:contract-pack` for
+these features BEFORE running `/playbook:qa-run`. Without this flag,
+completeness-discovered auth/payments/user_data features create a time
+bomb: build.sh builds them, qa.sh QA's them, then qa-run hard-errors
+at the release gate because there's no frozen contract.
+
 ### 6. Commit with COMPLETENESS: prefix
 
 ```
@@ -200,7 +265,15 @@ Append:
 - IS count:        <entities found by completeness extractor>
 - Missing found:   <count>
 - Appended to prd: <count>
+- Checkpoint validation: <all passed / N failures fixed>
 - Patterns noticed: <any recurring miss-types>
+```
+
+If any appended stories have `contract_needed: true`, add:
+```
+### Contract Requirements (from this iteration)
+- <story-id> — category: <cat> → <HARD/WARN> gate
+  Action: /playbook:contract-pack <story-id>
 ```
 
 If you spot a recurring gap pattern (e.g. "every CRUD feature is missing

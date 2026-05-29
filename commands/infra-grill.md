@@ -2,6 +2,8 @@
 
 Interview you about everything your app needs to run in the real world — without using cloud jargon. No mention of Docker, Kubernetes, CDN, load balancers, or any infrastructure term. Just business questions about your users, your budget, and your expectations.
 
+**Every decision gets a unique DEC-NNN ID and structured record. These feed into `/write-a-prd` which compiles them — not re-asks them.**
+
 Input: $ARGUMENTS (path to PRD, or "interactive" to start fresh)
 
 ## Why This Exists
@@ -14,9 +16,23 @@ You know the answers. You've just never been asked.
 
 ## Process
 
+### Step 0: Load Decision Context
+
+Before anything, check existing decision artifacts:
+```bash
+ls .planning/decision-index.md 2>/dev/null
+ls .planning/CONTEXT.md 2>/dev/null
+ls .planning/grill-log.md 2>/dev/null
+```
+
+If a decision index exists, find the highest DEC-NNN number and continue from there.
+
 ### Step 1: Load Context
 
 Read everything that describes what you're building:
+- `.planning/decision-index.md` (to continue DEC numbering)
+- `.planning/CONTEXT.md` (glossary terms already defined)
+- `.planning/grill-log.md` (decisions already made)
 - PRD or `.planning/decisions/`
 - `.planning/data-requirements.md` (from data-grill)
 - `.planning/ux-brief.md` (device priority tells us mobile vs desktop)
@@ -39,6 +55,68 @@ ls -la vercel.json wrangler.toml netlify.toml fly.toml railway.json Dockerfile d
 
 Present findings:
 > "I see your app uses Next.js with Drizzle ORM and Clerk auth. You currently have a wrangler.toml (Cloudflare) configuration. I'll ask questions with this in mind."
+
+## Decision Record Format
+
+Every resolved question becomes a DEC record with full metadata:
+
+```markdown
+#### DEC-[NNN]: [Short title]
+- **Question:** [The question asked]
+- **Options Considered:**
+  1. [Option A] — [tradeoff]
+  2. [Option B] — [tradeoff]
+- **Selected:** [What the user decided]
+- **Rationale:** [Why, in the user's words]
+- **Rejected:** [Alternatives not chosen, with reasons]
+- **Dependencies:** [DEC-NNN] or "None"
+- **Status:** DECIDED | DEFERRED | REJECTED
+- **Confidence:** HIGH | MEDIUM | LOW
+- **Reversibility:** EASY | MODERATE | HARD
+- **Scope-Risk:** LOCAL | MODULE | SYSTEM
+- **Counterargument:** [Strongest genuine attack on the selected option. What evidence would change this?]
+- **Valid Until:** [YYYY-MM-DD — 6 months for HARD, 12 months for MODERATE, "indefinite" for EASY]
+- **Consequences:**
+  - Enables: [what this unlocks]
+  - Constrains: [what this limits]
+  - Rollback plan: [how to undo, or "N/A"]
+- **Prediction:** [optional — "If this is right, we will see [observable] reach [threshold] by [verify_after date]." Required for HARD reversibility + LOW/MEDIUM confidence.]
+- **Observation Indicators:** [optional — "[metric] — watch for [concern]." Metrics to WATCH but NOT optimize.]
+```
+
+## Superseding Prior Decisions
+
+If an infrastructure decision contradicts or replaces a prior decision:
+1. Create the new DEC record as normal
+2. Add `Supersedes: DEC-[old ID]` to the new record
+3. Update the old DEC's status to `SUPERSEDED by DEC-[new ID]` in the grill-log
+4. Update the decision-index Superseded Decisions table
+
+## The Save Rule
+
+After EVERY section of questions (A through F), SAVE to disk immediately:
+1. Append DEC records to `.planning/grill-log.md` (under "Infrastructure Grill" heading)
+2. Update `.planning/decision-index.md` with new rows
+3. Update `.planning/CONTEXT.md` if any terms were defined
+
+Do NOT wait until the end. Infrastructure interviews can be long — save after each section.
+
+## The Counter Rule
+
+Track decisions since last save. Display:
+> "[DEC-055, DEC-056, DEC-057 captured — saving to disk...]"
+
+## Escape Hatch — Respect User Pushback
+
+If the user pushes back on a question TWICE, stop. Record as DEFERRED with `Reason Deferred: User explicitly deferred after discussion` and move on. First pushback: rephrase or explain why it matters. Second pushback: respect it immediately. Never ask a third time.
+
+## Depth Calibration
+
+Not every decision needs the full record. Use **note** (1-line) for trivial EASY/LOCAL decisions, **tactical** (compact: Question, Selected, Rationale, Status, Confidence, Reversibility, Scope-Risk) for moderate decisions, **standard** (full record) for important decisions, and **deep** (full record + ADR, Prediction required) for HARD reversibility or SYSTEM scope-risk decisions. When in doubt, go one tier higher.
+
+## Anti-Sycophancy Rules
+
+Never say "That's interesting", "That could work", or "You might consider." Take a position on every answer with a recommendation and reason. State what evidence would change your mind. Challenge vague answers. Name tradeoffs explicitly.
 
 ### Step 3: Present All Questions
 
@@ -288,14 +366,28 @@ Save to: `.planning/infra-requirements.md`
 - [ ] [anything unresolved]
 ```
 
-### Step 6: Commit and Handoff
+### Step 6: Verify Decision Artifacts
+
+If you followed the Save Rule (saving after each section A-F), the artifacts should already be up to date. This step is a VERIFICATION pass.
+
+1. **Verify `.planning/grill-log.md`** has ALL DEC records from this session (under "Infrastructure Grill" heading)
+2. **Verify `.planning/decision-index.md`** has all rows with Confidence, Reversibility, and Scope-Risk columns
+3. **Verify `.planning/CONTEXT.md`** has any new infrastructure terms
+4. **Check the Risk Dashboard** — flag LOW confidence + HARD reversibility combinations
+
+Every resolved answer should be a DEC-NNN record with full metadata.
+
+### Step 7: Commit and Handoff
 
 ```bash
-git add .planning/infra-requirements.md
-git commit -m "infra: capture infrastructure requirements from grilling session"
+git add .planning/infra-requirements.md .planning/decision-index.md .planning/grill-log.md .planning/CONTEXT.md
+git commit -m "infra: capture infrastructure requirements with DEC-NNN decision records"
 ```
 
-> "Infrastructure requirements captured. Your app serves [N] users in [geography] with [budget] budget.
+> "Infrastructure requirements captured. [N] decisions (DEC-[start] to DEC-[end]).
+> Your app serves [N] users in [geography] with [budget] budget.
+>
+> Decision index updated. `/write-a-prd` will compile these into the PRD.
 >
 > Next: Run `/infra-architect` — it will read this document and recommend the complete hosting setup. You won't need to make any cloud platform decisions yourself."
 

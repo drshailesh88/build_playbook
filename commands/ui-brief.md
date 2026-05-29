@@ -2,6 +2,8 @@
 
 Interview the founder about the visual identity of the app — fonts, colors, spacing, borders, shadows, animations, component style. Extracts visual DNA from inspiration apps identified in competition research. Produces a design specification that frontend development follows.
 
+**Every decision gets a unique DEC-NNN ID and structured record. These feed into `/write-a-prd` which compiles them — not re-asks them.**
+
 Input: $ARGUMENTS (module name or "app" for app-wide visual language)
 
 ## Why This Exists
@@ -12,9 +14,84 @@ Without this, the AI picks defaults — and defaults produce generic-looking app
 
 ## Prerequisites
 
+Check decision artifacts and continue numbering:
+```bash
+ls .planning/decision-index.md 2>/dev/null
+ls .planning/CONTEXT.md 2>/dev/null
+ls .planning/grill-log.md 2>/dev/null
+```
+
+If a decision index exists, find the highest DEC-NNN number and continue from there.
+
 Read these first:
+- `.planning/decision-index.md` — to continue DEC numbering
+- `.planning/CONTEXT.md` — glossary terms already defined
 - `.planning/competition-research.md` — especially the Design Inspirations section with visual DNA
 - `.planning/ux-brief.md` — UX decisions that the visual language must support
+
+## Decision Record Format
+
+Every resolved visual decision becomes a DEC record with full metadata:
+
+```markdown
+#### DEC-[NNN]: [Short title]
+- **Question:** [The visual/UI question asked]
+- **Options Considered:**
+  1. [Option A] — [tradeoff, with visual reference]
+  2. [Option B] — [tradeoff, with visual reference]
+- **Selected:** [What the founder decided]
+- **Rationale:** [Why, in the founder's words]
+- **Rejected:** [Alternatives not chosen, with reasons]
+- **Dependencies:** [DEC-NNN] or "None"
+- **Status:** DECIDED | DEFERRED | REJECTED
+- **Confidence:** HIGH | MEDIUM | LOW
+- **Reversibility:** EASY | MODERATE | HARD
+- **Scope-Risk:** LOCAL | MODULE | SYSTEM
+- **Counterargument:** [Strongest genuine attack on this visual choice. What evidence would change this?]
+- **Valid Until:** [YYYY-MM-DD — 6 months for HARD, 12 months for MODERATE, "indefinite" for EASY]
+- **Consequences:**
+  - Enables: [what this unlocks visually]
+  - Constrains: [what this limits]
+  - Rollback plan: [how to change if wrong, or "N/A"]
+- **Prediction:** [optional — "If this is right, we will see [observable] reach [threshold] by [verify_after date]." Required for HARD reversibility + LOW/MEDIUM confidence.]
+- **Observation Indicators:** [optional — "[metric] — watch for [concern]." Metrics to WATCH but NOT optimize.]
+```
+
+**UI grill note:** Most visual decisions are EASY to reverse (colors, spacing, shadows, border radius are CSS changes). But font choices and the overall design system structure can be MODERATE — they cascade across every component. Flag accordingly.
+
+## Superseding Prior Decisions
+
+If a visual decision contradicts or replaces a prior decision:
+1. Create the new DEC record as normal
+2. Add `Supersedes: DEC-[old ID]` to the new record
+3. Update the old DEC's status to `SUPERSEDED by DEC-[new ID]` in the grill-log
+4. Update the decision-index Superseded Decisions table
+
+## The Save Rule
+
+After EACH SECTION (A through E), SAVE to disk immediately:
+1. Append DEC records to `.planning/grill-log.md` (under "UI Brief" phase heading)
+2. Update `.planning/decision-index.md` with new rows (include Confidence, Reversibility, Scope-Risk)
+3. Update `.planning/CONTEXT.md` with any new visual/design terms
+
+Do NOT wait until the brief is compiled. Save after each section.
+
+## The Counter Rule
+
+Track decisions since last save. Display:
+> "[DEC-071, DEC-072, DEC-073 captured — saving to disk...]"
+
+## Escape Hatch — Respect User Pushback
+
+If the user pushes back on a question TWICE, stop. Record as DEFERRED with `Reason Deferred: User explicitly deferred after discussion` and move on. First pushback: rephrase or explain why it matters. Second pushback: respect it immediately. Never ask a third time.
+
+## Depth Calibration
+
+Not every decision needs the full record. Use **note** (1-line) for trivial EASY/LOCAL decisions, **tactical** (compact: Question, Selected, Rationale, Status, Confidence, Reversibility, Scope-Risk) for moderate decisions, **standard** (full record) for important decisions, and **deep** (full record + ADR, Prediction required) for HARD reversibility or SYSTEM scope-risk decisions. When in doubt, go one tier higher.
+
+## Anti-Sycophancy Rules
+
+Never say "That's interesting", "That could work", or "You might consider." Take a position on every visual recommendation with a reason. State what evidence would change your mind. Challenge vague preferences. Name tradeoffs explicitly.
 
 ## Process
 
@@ -314,14 +391,28 @@ Save to: `.planning/ui-brief.md`
 ```
 ```
 
-### Step 5: Commit and Handoff
+### Step 5: Verify Decision Artifacts
+
+If you followed the Save Rule (saving after each section A-E), the artifacts should already be up to date. This step is a VERIFICATION pass.
+
+1. **Verify `.planning/grill-log.md`** has ALL DEC records from this session (under "UI Brief" heading)
+2. **Verify `.planning/decision-index.md`** has all rows with Confidence, Reversibility, and Scope-Risk columns
+3. **Verify `.planning/CONTEXT.md`** has all visual/design terms
+4. **Check the Risk Dashboard** — font choices and design system structure are MODERATE to reverse; flag if confidence is LOW.
+
+Every resolved visual decision should be a DEC-NNN record with full metadata.
+
+### Step 6: Commit and Handoff
 
 ```bash
-git add .planning/ui-brief.md
-git commit -m "ui: complete visual language specification from founder interview"
+git add .planning/ui-brief.md .planning/decision-index.md .planning/grill-log.md .planning/CONTEXT.md
+git commit -m "ui: complete visual language spec with DEC-NNN decision records"
 ```
 
-> "Visual language defined. Typography, colors, spacing, components, and motion all documented.
+> "Visual language defined. [N] decisions captured (DEC-[start] to DEC-[end]).
+> Typography, colors, spacing, components, and motion all documented.
+>
+> Decision index updated. `/write-a-prd` will compile these into the PRD.
 >
 > The CSS variables template is ready to drop into your project.
 > 

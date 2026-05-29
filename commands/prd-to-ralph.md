@@ -380,6 +380,90 @@ For each story entry, write `ralph/specs/{story-id}.md`:
 [Copy the ENTIRE PRD story section verbatim — all fields, all sections,
 all decision backing, all risk metadata. This is the FULL context.]
 
+## Decision Records (referenced by this story)
+
+[For each DEC-NNN referenced in this story's acceptance criteria,
+escalation conditions, risk flags, or builder notes, find the full
+record in `.planning/decisions/` files or `.planning/grill-log.md`
+and include it here.]
+
+### DEC-NNN: [short title]
+- **Selected:** [what was decided]
+- **Rationale:** [why, in the user's words]
+- **Options Considered:**
+  1. [Option A] — [tradeoff]
+  2. [Option B] — [tradeoff]
+- **Counterargument:** [strongest genuine attack on the selected option]
+- **Confidence:** [HIGH/MEDIUM/LOW]
+- **Reversibility:** [EASY/MODERATE/HARD]
+- **Scope-Risk:** [LOCAL/MODULE/SYSTEM]
+- **Consequences:**
+  - Enables: [what this unlocks]
+  - Constrains: [what this limits]
+  - Rollback plan: [how to undo]
+
+[Repeat for each referenced DEC. If a DEC record cannot be found in
+.planning/ files, note: "DEC-NNN: record not found in .planning/ —
+see PRD for inline reference only."]
+
+## Data Model Context
+[IF this story's `data_model` field is NOT "N/A", extract the relevant
+data subject sections from `.planning/data-requirements.md`.]
+
+### Subject: [name]
+- **Lifecycle:** Created by [who]. [Deletion behavior]. History: [yes/no].
+- **Ownership:** Belongs to [scope]. Sharing: [model]. Access levels: [list].
+- **Content:** Contains [list]. Cascade on delete: [behavior].
+  Shared references: [yes/no]. Ordering: [method].
+- **Limits:** Max per user: [N]. Size: [limit]. Name rules: [rules].
+- **Billing:** [impact or "none"]
+
+### Relationships involving [subject]
+| Subject A | Relationship | Subject B | On Delete A | On Delete B |
+|-----------|-------------|-----------|-------------|-------------|
+| [A] | [rel] | [B] | [behavior] | [behavior] |
+
+[IF `data_model` is "N/A", omit this entire section.]
+
+## UX Context
+[IF this story's `page` field is NOT "N/A — Backend", extract the
+relevant per-module UX decisions from `.planning/ux-brief.md`.]
+
+- **Model:** [Bear / Wizard / Hybrid]
+- **Empty state:** [treatment]
+- **Primary actions (top 3):** [list]
+- **Loading:** [pattern]
+- **Feedback:** [mechanism]
+- **Error handling:** [approach]
+
+[IF the story is backend-only, omit this section.]
+
+## UI Context
+[IF this story's `category` is "ui" or "layout", OR if `page` is not
+"N/A — Backend", extract relevant visual specs from `.planning/ui-brief.md`.]
+
+- **Component style:** Buttons: [style]. Inputs: [style]. Icons: [style].
+- **Spacing:** Base unit: [px]. Border radius: [px].
+- **Typography:** [font] at [size], line-height [ratio].
+- **Key CSS variables:**
+  ```
+  --accent: [hex]; --bg-primary: [hex]; --radius: [px];
+  --space-unit: [px]; --font-body: '[font]';
+  ```
+
+[IF the story is backend-only with no UI component, omit this section.]
+
+## Infrastructure Context
+[IF this story's acceptance criteria reference file uploads, performance
+thresholds, response time expectations, or scaling behavior, extract
+relevant constraints from `.planning/infra-requirements.md`.]
+
+- **Response time:** [expectation]
+- **File limits:** [size/type constraints]
+- **Scaling:** [relevant projection]
+
+[IF no infra constraints are relevant, omit this section.]
+
 ## Compiled prd.json Entry Reference
 id: {id}
 priority: {priority}
@@ -390,11 +474,24 @@ fail_to_pass: {fail_to_pass list}
 [Terms from CONTEXT.md that appear in this story]
 ```
 
+**Section inclusion rules:** Only include a domain context section if
+the story touches that domain. A backend CRUD story gets Decision Records
+and Data Model Context but NOT UX/UI Context. A frontend layout story gets
+Decision Records, UX Context, and UI Context but NOT Data Model Context.
+Never include empty sections — omit the heading entirely if the story
+doesn't need it.
+
+**Size budget:** Each domain section adds 20-40 lines. A story touching
+all four domains (rare) adds ~120 lines. Most stories touch 1-2 domains.
+This is well within context budget since only one spec file is read per
+iteration.
+
 The build-prompt instructs the builder to read
 `ralph/specs/{story-id}.md` for full context when the compressed
 `behavior` field in prd.json isn't sufficient. This is the
 full-spec-per-iteration pattern — the builder always has access to
-the uncompressed original.
+the uncompressed original, the full decision records, and the relevant
+domain context.
 
 ### Step 5a: Inject domain glossary
 
@@ -412,18 +509,30 @@ the compiled entries. Append a glossary block to the FIRST entry's
 This ensures the builder has precise definitions without needing to
 read .planning/ files.
 
-### Step 5b: Checkpoint gate — validate glossary + spec files
+### Step 5b: Checkpoint gate — validate glossary + spec files + decision context
 
 Before writing prd.json, verify:
 1. Every glossary term referenced in behavior fields has a definition
    (either in the FIRST entry's glossary block or in the spec file).
 2. Every `ralph/specs/{id}.md` file exists for each compiled entry.
 3. Every `fail_to_pass` entry matches a test name in the `tests` field.
+4. Every DEC-NNN referenced in the story's behavior field has a
+   corresponding entry in the spec file's `## Decision Records` section.
+5. Every spec file with `data_model != "N/A"` has a `## Data Model Context`
+   section (unless `.planning/data-requirements.md` doesn't exist).
+6. Every spec file with `page != "N/A — Backend"` has a `## UX Context`
+   section (unless `.planning/ux-brief.md` doesn't exist).
 
 ```python
+import re
+
 for entry in entries:
     spec_path = f"ralph/specs/{entry['id']}.md"
     assert os.path.exists(spec_path), f"Missing spec file: {spec_path}"
+
+    spec_content = open(spec_path).read()
+
+    # fail_to_pass ↔ tests alignment
     ftp = set(entry.get('fail_to_pass', []))
     test_names = set()
     for t in entry.get('tests', {}).get('unit', []):
@@ -434,6 +543,23 @@ for entry in entries:
         test_names.add(f"edge.{t['name']}")
     orphans = ftp - test_names
     assert not orphans, f"fail_to_pass entries without matching tests: {orphans}"
+
+    # Decision record coverage
+    beh = entry.get('behavior', '')
+    dec_refs = set(re.findall(r'DEC-\d+', beh))
+    for dec_id in dec_refs:
+        assert dec_id in spec_content, \
+            f"spec {entry['id']}: {dec_id} referenced in behavior but missing from Decision Records section"
+
+    # Domain context presence (conditional)
+    if entry.get('data_model', 'N/A') != 'N/A':
+        if os.path.exists('.planning/data-requirements.md'):
+            assert '## Data Model Context' in spec_content, \
+                f"spec {entry['id']}: data_model is set but no Data Model Context section"
+    if entry.get('page', 'N/A') != 'N/A — Backend':
+        if os.path.exists('.planning/ux-brief.md'):
+            assert '## UX Context' in spec_content, \
+                f"spec {entry['id']}: page is set but no UX Context section"
 ```
 
 ### Step 6: Write `ralph/prd.json` as a flat array
@@ -527,7 +653,16 @@ cat > ralph/compilation-manifest.md << 'EOF'
 
 ## Glossary injected: [yes/no] ([N] terms)
 ## UI brief used: [yes/no]
+## UX brief used: [yes/no]
 ## Data requirements used: [yes/no]
+## Infra requirements used: [yes/no]
+
+## Spec File Enrichment
+- Decision records injected: [N] unique DEC records across [N] spec files
+- Data model context: [N] spec files enriched (stories with data_model != N/A)
+- UX context: [N] spec files enriched (stories with page != N/A — Backend)
+- UI context: [N] spec files enriched (ui/layout category stories)
+- Infra context: [N] spec files enriched (stories referencing perf/upload/scaling)
 
 ## Verification
 - Shape validation: PASSED
@@ -537,6 +672,8 @@ cat > ralph/compilation-manifest.md << 'EOF'
 - Test coverage: [N] unit, [N] e2e, [N] edge_case skeletons
 - fail_to_pass oracles: [N] total test names pinned
 - Spec files: [N] files in ralph/specs/
+- Decision record coverage: PASSED (all DEC refs in behavior have spec entries)
+- Domain context coverage: PASSED (data/UX/UI sections present where needed)
 - Checkpoint gates: 2/2 passed (per-entry + pre-write)
 EOF
 ```
@@ -609,6 +746,9 @@ Next steps:
 | Test oracle | None (builder names tests freely) | fail_to_pass pins exact names |
 | AC format | Prose | EARS (WHEN/SHALL, IF/THEN) |
 | Full spec access | Lost after compression | ralph/specs/{id}.md per story |
+| Decision rationale | Lost (only DEC-NNN refs survive) | Full DEC records in spec files |
+| Data model context | One-line reference | Structured lifecycle/ownership/limits in spec |
+| UX/UI context | Compressed extract | Per-module UX + CSS variables in spec |
 | Validation | End-to-end only | Checkpoint gates per-entry + pre-write |
 | Auditability | None | Compilation manifest |
 
