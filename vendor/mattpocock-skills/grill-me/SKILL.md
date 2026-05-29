@@ -90,25 +90,43 @@ If NO code exists, skip this step — the project is greenfield.
 **All DEC ID allocation goes through `.planning/next-dec-id`.** This file
 contains a single integer — the next ID to assign.
 
+Allocation MUST be guarded by a lock. Without one, two parallel grill
+sessions can read the same value before either writes it back, producing
+duplicate IDs. `mkdir` is atomic on every filesystem — it either succeeds
+(you hold the lock) or fails (someone else holds it).
+
 ```bash
-# Read or initialize the counter
-if [ -f .planning/next-dec-id ]; then
-  NEXT_ID=$(cat .planning/next-dec-id)
-else
-  mkdir -p .planning
-  echo 1 > .planning/next-dec-id
-  NEXT_ID=1
-fi
+# Atomic DEC ID allocation with mkdir lock
+acquire_lock() {
+  while ! mkdir .planning/.dec-lock 2>/dev/null; do
+    sleep 0.1
+  done
+}
+release_lock() {
+  rmdir .planning/.dec-lock
+}
+
+acquire_lock
+NEXT_ID=$(cat .planning/next-dec-id 2>/dev/null || echo 1)
+echo $((NEXT_ID + 1)) > .planning/next-dec-id
+release_lock
+# Use DEC-$NEXT_ID for this record
 ```
 
+If `.planning/.dec-lock` exists and is older than 60 seconds, it is
+stale — remove it (`rmdir .planning/.dec-lock`) and retry. This handles
+crashed sessions that never released the lock.
+
 When you need a new DEC ID:
-1. Read `.planning/next-dec-id` → that's your ID
-2. Write `ID + 1` back to the file immediately
-3. Use the ID in your record
+1. Acquire the lock (`mkdir .planning/.dec-lock`)
+2. Read `.planning/next-dec-id` → that's your ID
+3. Write `ID + 1` back to the file
+4. Release the lock (`rmdir .planning/.dec-lock`)
+5. Use the ID in your record
 
 **Never derive IDs by scanning grill-log.md or decision-index.md.** Those
 are append-only logs — the counter file is the single source of truth.
-This prevents parallel sessions from producing duplicate IDs.
+The lock prevents parallel sessions from producing duplicate IDs.
 
 ### 5. Resume or Start Fresh
 
@@ -144,6 +162,7 @@ Every decision, no matter how small, gets this structure in the grill log. The r
 - **Confidence:** HIGH | MEDIUM | LOW
 - **Reversibility:** EASY | MODERATE | HARD
 - **Scope-Risk:** LOCAL | MODULE | SYSTEM
+- **Tier:** note | tactical | standard | deep
 - **Counterargument:** [Strongest genuine attack on the selected option. What would someone who disagrees say? What evidence would change this decision?]
 - **Valid Until:** [YYYY-MM-DD — when this decision should be re-evaluated. Default: 6 months for HARD reversibility, 12 months for MODERATE, "indefinite" for EASY.]
 - **Consequences:**
@@ -183,6 +202,7 @@ For `DEFERRED` decisions (same core fields — downstream compilers need them):
 - **Selected:** DEFERRED — no option chosen yet
 - **Rationale:** [Why deferring is the right call now]
 - **Status:** DEFERRED
+- **Criticality:** BLOCKING (builder guessing wrong causes irreversible harm) | NON-BLOCKING (safe default exists)
 - **Reason Deferred:** [Why not now]
 - **Would Revisit When:** [Trigger condition]
 - **Dependencies:** [DEC-NNN] or "None"
@@ -561,12 +581,12 @@ Last updated: [timestamp]
 
 ## Index
 
-| ID | Title | Status | Phase | Confidence | Reversibility | Scope-Risk | Dependencies | Session |
-|----|-------|--------|-------|-----------|--------------|-----------|-------------|---------|
-| DEC-001 | [title] | DECIDED | Problem & Actor | HIGH | EASY | LOCAL | None | 1 |
-| DEC-002 | [title] | DECIDED | Problem & Actor | HIGH | MODERATE | MODULE | DEC-001 | 1 |
-| DEC-003 | [title] | DEFERRED | Scope | MEDIUM | — | MODULE | None | 1 |
-| ... | | | | | | | | |
+| ID | Title | Status | Phase | Confidence | Reversibility | Scope-Risk | Tier | Dependencies | Session |
+|----|-------|--------|-------|-----------|--------------|-----------|------|-------------|---------|
+| DEC-001 | [title] | DECIDED | Problem & Actor | HIGH | EASY | LOCAL | tactical | None | 1 |
+| DEC-002 | [title] | DECIDED | Problem & Actor | HIGH | MODERATE | MODULE | standard | DEC-001 | 1 |
+| DEC-003 | [title] | DEFERRED | Scope | MEDIUM | — | MODULE | standard | None | 1 |
+| ... | | | | | | | | | |
 
 ## Dependency Graph
 [List any chains: DEC-005 depends on DEC-003 depends on DEC-001]
@@ -598,19 +618,23 @@ richest thinking happens in dialogue. If the context window compacts
 before you save, that thinking is gone forever. A single unsaved
 decision is one too many.
 
-You may batch the display (ask 2-3 questions, then save all resolved
-records at once) but never let more than 3 unsaved decisions accumulate.
-If you've resolved 3 questions and haven't saved, STOP ASKING and SAVE.
+Save each decision to disk BEFORE asking the next question. Display
+a brief inline confirmation: `[DEC-NNN saved to disk]`. This does not
+interrupt conversation flow — it takes one tool call to append the
+record and update the index.
 
 **This is the single most important rule in this skill.**
 
 ## The Counter Rule
 
-Track how many decisions have been made since the last save. Display a counter in your responses:
+Confirm each save inline as it happens — one decision, one save, one
+confirmation. Display the confirmation in your response:
 
-> "[DEC-007, DEC-008, DEC-009 captured — saving to disk...]"
+> "[DEC-007 saved to disk]"
 
-This makes saves visible and creates accountability.
+This makes every save visible and creates accountability. Never display a
+batch of captured-but-unsaved IDs — each ID appears only after its record
+is on disk.
 
 ## Completion Gate
 
@@ -622,6 +646,7 @@ The grill is done when:
 5. CONTEXT.md glossary covers all domain terms used
 6. The "Parking Lot" contains only out-of-scope topics
 7. No DECIDED items depend on DEFERRED items without acknowledgment
+8. All BLOCKING deferrals must be resolved, converted to explicit non-goals, or tied to a safe default with acceptance criteria before the grill can complete. List any remaining BLOCKING deferrals and warn the user that `write-a-prd` will refuse to compile stories that depend on them.
 
 When complete, tell the user:
 ```
@@ -647,7 +672,7 @@ If `.planning/grill-log.md` exists:
 3. Read `.planning/CONTEXT.md` for current glossary
 4. Read any `.planning/adrs/*.md` files
 5. Identify which phases are completed
-6. Find the highest DEC-NNN number
+6. Verify `.planning/next-dec-id` matches highest DEC + 1. If not, fix it.
 7. Continue from where the last session left off
 8. Do NOT re-ask resolved questions
 9. If prior answers seem incomplete, ask follow-up questions — don't start over
@@ -697,6 +722,12 @@ cannot classify risk and may fill in permissive defaults.
 | **standard** | Important, any reversibility, any scope. Most decisions land here. | Full DEC record with all fields. |
 | **deep** | HARD reversibility, or SYSTEM scope-risk, or LOW confidence. "What database engine?" | Full DEC record + ADR. Prediction field REQUIRED. Counterargument REQUIRED and must be substantial. |
 
+**Mandatory tier escalation:** Any decision with HARD reversibility MUST be
+`deep`. Any decision with SYSTEM scope-risk MUST be `standard` or `deep`.
+Any decision with LOW confidence MUST be `standard` or `deep`. If the
+user's chosen tier conflicts with these rules, escalate automatically and
+note why.
+
 **How to calibrate:**
 1. Before recording, mentally ask: "If this decision turned out wrong, how much would it cost to fix?" 
 2. If the answer is "5 minutes of config" → **note**
@@ -715,6 +746,19 @@ If the user pushes back on a question or line of inquiry TWICE (two distinct pus
 1. **First pushback:** Rephrase the question or explain why it matters. "I'm asking because [downstream impact]. But if you're not ready to decide, we can defer."
 2. **Second pushback:** Stop. Record the decision as DEFERRED with `Reason Deferred: User explicitly deferred after discussion` and move on immediately.
 
+**After recording DEFERRED, classify its criticality** (record it in the
+`Criticality` field):
+
+- **BLOCKING DEFERRAL:** The decision is about permissions, deletion,
+  authentication, payment, data lifecycle, tenant isolation, or any topic
+  where a builder guessing wrong causes irreversible harm. Mark the record
+  with `Criticality: BLOCKING`. The completion gate MUST list these and
+  warn the user that `write-a-prd` will refuse to compile stories that
+  depend on BLOCKING deferrals.
+- **NON-BLOCKING DEFERRAL:** The decision is about UI preference, wording,
+  non-critical UX, or anything where a safe default exists. Mark the record
+  with `Criticality: NON-BLOCKING`. The completion gate allows these.
+
 **Never:**
 - Ask the same question a third time with different framing
 - Passive-aggressively return to the topic later in the session
@@ -729,7 +773,7 @@ This applies to ALL interrogation-style commands: grill-me, office-hours, data-g
 
 - **Never make decisions for the user.** Present options with recommendations. Record what they chose.
 - **Never paraphrase decisions.** Record the user's actual words in the rationale.
-- **Never batch decisions at end of session.** Write after every decision, or at most every 3.
+- **Never batch decisions.** Write after every decision, before asking the next question.
 - **Never skip the decision ID.** Every resolved question gets a DEC-NNN, no exceptions.
 - **Never leave a vague term undefined.** If a term appears without a CONTEXT.md entry, challenge it.
 - **Never chase topics outside the domain scope.** Park them in the Parking Lot.

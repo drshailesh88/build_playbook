@@ -140,6 +140,22 @@ ls docs/handover-context.md 2>/dev/null
   Then come back to /write-a-prd — it will read everything and compile.
   ```
 
+**Integrity checks (run AFTER scoring):**
+
+If score >= 10, verify artifact integrity before proceeding:
+
+1. Parse `.planning/grill-log.md` — count DECIDED, DEFERRED, REJECTED
+2. Parse `.planning/decision-index.md` — count rows
+3. If counts don't match: STOP. "Decision index has [X] entries but
+   grill log has [Y] decisions. Run `/grill-me` to reconcile."
+4. If `.planning/next-dec-id` exists, verify its value equals
+   highest DEC ID + 1. Mismatch means parallel corruption.
+5. For each DEFERRED decision in the grill log, verify it exists in
+   the index with status DEFERRED. Missing DEFERRED records are the
+   most dangerous integrity failure — they become invisible to the PRD.
+6. Check file freshness: if `grill-log.md` was modified more recently
+   than `decision-index.md`, the index may be stale. Warn the user.
+
 ### 1. Load Decision Artifacts — Hot/Cold Strategy
 
 Use a tiered loading strategy to manage token budget efficiently. Not everything needs to be loaded at full resolution upfront.
@@ -346,10 +362,20 @@ Before finalizing, cross-reference the PRD against ALL decision artifacts to ens
 | `.planning/infra-requirements.md` | Every infrastructure requirement maps to an implementation decision or operational constraint |
 
 **Procedure:**
-1. Re-read the decision index
+1. Build the master decision set from the UNION of:
+   - All DEC records in `.planning/grill-log.md`
+   - All DEC records in `.planning/decisions/*.md`
+   - All rows in `.planning/decision-index.md`
+   If a DEC ID appears in one source but not another, flag it as an
+   integrity error. Do NOT proceed until resolved.
 2. For each DECIDED decision, find the corresponding PRD section
 3. For each DEFERRED decision, verify it appears in Deferred Stories
 4. For each REJECTED decision, verify it appears in Explicit Non-Goals
+4b. For each DEFERRED decision in the master set, verify:
+   - It appears in the Deferred Stories section of the PRD
+   - If it has `Criticality: BLOCKING`, any BUILD story that depends on
+     it (directly or transitively) must be flagged
+   - BLOCKING deferrals without resolution block PRD finalization
 5. If a decision has NO corresponding PRD entry, either:
    - Add a story for it
    - Add it to Implementation Decisions
@@ -370,6 +396,18 @@ Cross-Reference Results:
   DROPPED (not in PRD): 0  <- this MUST be zero
   ASSUMPTIONS flagged: [n]  <- this should be minimized
 ```
+
+7. Reverse check — extract ALL `DEC-NNN` references from the PRD text.
+   For each:
+   - The DEC ID must exist in the master decision set
+   - The DEC status must be compatible with its location:
+     - DECIDED DECs can appear in BUILD stories
+     - DEFERRED DECs can appear in Deferred Stories only
+     - REJECTED DECs can appear in Explicit Non-Goals only
+     - SUPERSEDED DECs must NOT appear anywhere — only their
+       replacements
+   - The PRD location (e.g., 'Story S01, AC 3') must actually exist
+   Flag any violations as blocking errors.
 
 If any decision was DROPPED (exists in decision index but not in PRD), do NOT finalize. Ask the user what to do with each dropped item.
 
@@ -533,7 +571,12 @@ For each story, use this template:
 **Business Value:** [why this matters now]
 **Decision Backing:** DEC-NNN, DEC-NNN, DEC-NNN
 **Screen / Wireframe:** [reference, route, mock, or "N/A - backend"]
-**Dependencies:** [upstream stories, modules, integrations, or "None"]
+**Dependencies:** [Story IDs only: S01, S03, or "None"]
+**External Prerequisites:** [Non-story dependencies: "Stripe API configured", "Auth module deployed", or "None"]
+
+> Every ID in Dependencies must be a BUILD story defined in this PRD.
+> `prd-to-ralph` builds a dependency graph from this field — prose
+> entries or non-existent story IDs will cause compilation failure.
 
 **Decision Metadata (inherited from backing decisions):**
 - Lowest confidence: [HIGH/MEDIUM/LOW — inherited from the least-confident backing DEC]
@@ -586,6 +629,27 @@ Avoid:
 - "supports management"
 - "handles edge cases"
 - Prose acceptance criteria without WHEN/SHALL structure
+
+**EARS Validation Gate (apply to every criterion before finalizing):**
+
+Each acceptance criterion MUST match one of these patterns:
+- `WHEN [trigger] THE SYSTEM SHALL [behavior] (DEC-NNN)`
+- `WHILE [state] THE SYSTEM SHALL [behavior] (DEC-NNN)`
+- `IF [condition] THEN THE SYSTEM SHALL [behavior] (DEC-NNN)`
+- `WHERE [feature] IS SUPPORTED THE SYSTEM SHALL [behavior] (DEC-NNN)`
+- `THE SYSTEM SHALL [behavior] (DEC-NNN)`
+
+Validation rules:
+1. Exactly one criterion per bullet point (no compound criteria)
+2. Keywords WHEN/WHILE/IF/WHERE/SHALL must be UPPERCASE
+3. Every criterion must end with `(DEC-NNN)` tracing to a decision
+4. The [trigger]/[condition] must name a specific user action, system
+   state, or error condition — not vague phrases like "when appropriate"
+5. The [behavior] must be verifiable from code or UI — not "works well"
+
+If a criterion fails validation, rewrite it before including it in the
+PRD. Do NOT include unvalidated criteria and hope downstream will fix
+them.
 
 If any criterion lacks a DEC reference: `[ASSUMPTION: no decision backing — needs founder confirmation]`
 
@@ -694,14 +758,25 @@ Every decision ID from the decision index must appear somewhere in this PRD.
 | ... | | | | | |
 
 **Dropped count: 0** (any non-zero value means the PRD is incomplete)
-**SUPERSEDED decisions** should NOT appear in story backing — only their replacements.
+
+**Bidirectional verification:**
+The table above verifies index → PRD (every decision appears somewhere).
+Step 7 of the Cross-Reference Verification verifies PRD → index (every
+DEC reference in PRD text resolves to a valid decision with compatible
+status). Both directions must pass. A PRD that only satisfies one
+direction is incomplete.
+
+**SUPERSEDED decisions** must NOT appear in BUILD story backing, acceptance
+criteria, or verification anchors. Only their replacement DEC should be
+referenced. If a superseded DEC appears in the PRD, replace it with the
+superseding DEC ID.
 
 ## Sprint-Scoping Readiness
 
 The PRD must be decomposable into sprint-scoped build packs. This section verifies the PRD is structured for downstream consumption by `/playbook:prd-to-gsd` and `/playbook:prd-to-ralph`.
 
 **Dependency ordering:**
-- Every BUILD story's dependencies must be explicitly listed
+- Every BUILD story's Dependencies must contain only story IDs that exist in this PRD. External Prerequisites are tracked separately and do not affect build ordering.
 - No circular dependencies between BUILD stories
 - Stories should be orderable into a build sequence where each story's dependencies are satisfied by prior stories
 - If Story S05 depends on Story S02, S02 must be buildable and testable independently
