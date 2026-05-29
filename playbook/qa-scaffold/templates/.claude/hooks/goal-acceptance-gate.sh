@@ -141,18 +141,24 @@ except Exception:
 " 2>/dev/null)
 
 if [ -n "$FAIL_TO_PASS" ]; then
-  TEST_OUTPUT=$(npm run test:run -- --reporter=verbose 2>&1 || true)
+  TEST_EXIT=0
+  TEST_OUTPUT=$(npm run test:run -- --reporter=verbose 2>&1) || TEST_EXIT=$?
+
+  if [ "$TEST_EXIT" -ne 0 ]; then
+    ERRORS+=("test suite exited with code $TEST_EXIT — pinned tests cannot be verified while the suite is red")
+  fi
 
   TOTAL_FTP=0
   FOUND_FTP=0
   MISSING_FTP=""
   while IFS= read -r test_name; do
     TOTAL_FTP=$((TOTAL_FTP + 1))
-    # Use grep -F for fixed-string matching (no regex metachar issues)
-    # Also check for the final segment (it block name) in case verbose
-    # output separates suite and test names
     LAST_SEGMENT="${test_name##*.}"
-    if echo "$TEST_OUTPUT" | grep -qF "$test_name" || echo "$TEST_OUTPUT" | grep -qF "$LAST_SEGMENT"; then
+    # Verify test name appears in a PASSING context (✓ or PASS prefix),
+    # not just anywhere in output (failing tests also print their name)
+    if echo "$TEST_OUTPUT" | grep -F "$test_name" | grep -qE '✓|✔|PASS|pass'; then
+      FOUND_FTP=$((FOUND_FTP + 1))
+    elif echo "$TEST_OUTPUT" | grep -F "$LAST_SEGMENT" | grep -qE '✓|✔|PASS|pass'; then
       FOUND_FTP=$((FOUND_FTP + 1))
     else
       MISSING_FTP="${MISSING_FTP}  - ${test_name}\n"
@@ -160,7 +166,7 @@ if [ -n "$FAIL_TO_PASS" ]; then
   done <<< "$FAIL_TO_PASS"
 
   if [ "$FOUND_FTP" -lt "$TOTAL_FTP" ]; then
-    ERRORS+=("fail_to_pass: $FOUND_FTP/$TOTAL_FTP pinned tests found. Missing:\n$MISSING_FTP")
+    ERRORS+=("fail_to_pass: $FOUND_FTP/$TOTAL_FTP pinned tests PASSED. Missing or failing:\n$MISSING_FTP")
   fi
 fi
 

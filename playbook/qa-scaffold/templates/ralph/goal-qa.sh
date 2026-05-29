@@ -101,7 +101,13 @@ cleanup() {
     cp "CLAUDE.full.$$.md" CLAUDE.md
     rm -f "CLAUDE.full.$$.md"
   fi
-  rm -f ralph/goal-current-story.txt
+  # Only remove tracking file if it still belongs to this process
+  if [ -f ralph/goal-current-story.txt ]; then
+    CURRENT=$(cat ralph/goal-current-story.txt 2>/dev/null || echo "")
+    if [ "$CURRENT" = "qa:${STORY_ID}:$$" ]; then
+      rm -f ralph/goal-current-story.txt
+    fi
+  fi
 }
 trap cleanup EXIT
 
