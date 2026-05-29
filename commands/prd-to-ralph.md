@@ -1,8 +1,13 @@
-# prd-to-ralph — Convert PRD to Huntley's prd.json format
+# prd-to-ralph — Compile PRD to Huntley's prd.json format
 
-Converts the PRD + grilling decisions into the exact flat-array `prd.json`
+Mechanically transforms the PRD into the exact flat-array `prd.json`
 that Huntley's `build-ralph.sh` expects. After this command, the target
 app is ready for Huntley's Ralph loop.
+
+**This is a COMPILER, not an interview.** Every prd.json field is derived
+from a specific PRD section via a documented mapping rule. The LLM does
+NOT interpret, rephrase, or add to the PRD content. If a mapping rule
+cannot extract a value, the field is flagged — never silently filled.
 
 Ralph itself does NOT live in this playbook. You clone/copy his scripts
 (`build-ralph.sh`, `qa-ralph.sh`, `build-prompt.md`, `qa-prompt.md`,
@@ -13,19 +18,42 @@ input Ralph needs.
 
 Input: `$ARGUMENTS` — optional flags.
 
-## Why This Exists
+## Why This Exists — The Lossy Compression Problem
 
-Huntley's Ralph build loop reads `prd.json` (flat array) one entry at a
-time, picks the first `passes: false`, implements it TDD-first, commits,
-flips `passes: true`, signals `<promise>NEXT</promise>`. His counting
-pattern iterates the flat array directly:
+The PRD has 15+ fields per story: DEC-NNN traceability, risk metadata
+(confidence/reversibility/scope-risk), escalation conditions,
+counterarguments, predictions, verification anchors, in-scope/out-of-scope.
 
-```bash
-python3 -c "import json; d=json.load(open('prd.json')); print(sum(1 for x in d if x.get('passes', False)))"
-```
+Huntley's prd.json has ~11 fields. A naive conversion DROPS the metadata
+that tells builders where risk lives, when to stop, and what NOT to build.
 
-Any wrapper (`{ userStories: [...] }`) breaks this. Output MUST be a
-flat JSON array.
+This compiler solves the gap by injecting critical metadata as structured
+blocks inside the `behavior` field — the ONE field the builder reads
+most carefully. The prd.json schema stays flat and simple (Huntley's
+counting pattern works unchanged). The builder gets full signal.
+
+## Core Principle: Compiler, Not Interviewer
+
+The old version interviewed the user to break features into stories.
+That re-introduction of LLM interpretation is exactly what the grill →
+PRD pipeline was designed to eliminate.
+
+**This version has ZERO interpretation steps.** The mapping is mechanical:
+
+| PRD Section | prd.json Field | Rule |
+|-------------|---------------|------|
+| Story ID | `id` | Kebab-case: `{domain}-{NNN}` from story ID |
+| Story domain | `category` | Map: data→data, layout/nav→layout, frontend/UI→ui, CRUD→crud, settings→settings, interaction→interaction |
+| Story sentence | `description` | Copy story sentence verbatim |
+| Screen/Wireframe | `page` | Copy route path, or `"N/A — Backend"` |
+| UI brief references | `ui_details` | Extract from UI brief per-module; `"N/A"` for backend |
+| **Enriched behavior** | `behavior` | Compiled from 7 PRD sub-sections (see below) |
+| Data model references | `data_model` | Copy from Implementation Decisions data section |
+| Story ordering | `priority` | Integer from dependency-sorted position |
+| Has dependents? | `core` | `true` if other BUILD stories list this as dependency |
+| Acceptance criteria + edge cases | `tests` | Structured extraction (see below) |
+| Test names from tests field | `fail_to_pass` | Pinned oracle names: `{module}.{feature}.{behavior}` |
+| Initial state | `passes` | Always `false` |
 
 ## Flags
 
@@ -33,79 +61,394 @@ flat JSON array.
 - `--out=<path>` — output path; default `ralph/prd.json`.
 - `--from-existing=<path>` — append to an existing prd.json instead of
   overwriting (useful when a new feature needs to land mid-build).
+- `--dry-run` — print compiled entries without writing.
 
 ## Preconditions
 
 - A PRD exists at `.planning/PRD.md` (or wherever `--prd` points).
-- Ideally, grilling-session decisions in `.planning/decisions/*.md`, and
-  a UI brief at `.planning/ui-brief.md` for `ui_details` context.
+  The PRD MUST have been produced by `/write-a-prd` (decision-backed
+  stories with acceptance criteria, verification anchors, etc.).
+- `.planning/ui-brief.md` for `ui_details` context (optional but recommended).
+- `.planning/CONTEXT.md` for the domain glossary (optional but recommended).
 
 ## Process
 
 ### Step 1: Read source artifacts
 
-```ts
-const prd = await readFile(flags.prd ?? ".planning/PRD.md", "utf8");
-const uxBrief = await readFile(".planning/ux-brief.md", "utf8").catch(() => null);
-const uiBrief = await readFile(".planning/ui-brief.md", "utf8").catch(() => null);
-const dataReqs = await readFile(".planning/data-requirements.md", "utf8").catch(() => null);
-const decisionFiles = await glob(".planning/decisions/*.md");
+```bash
+cat .planning/PRD.md 2>/dev/null          # required
+cat .planning/ui-brief.md 2>/dev/null     # for ui_details
+cat .planning/ux-brief.md 2>/dev/null     # for behavior context
+cat .planning/data-requirements.md 2>/dev/null  # for data_model
+cat .planning/CONTEXT.md 2>/dev/null      # for glossary injection
+cat .planning/decision-index.md 2>/dev/null     # for risk metadata lookup
 ```
 
-### Step 2: Interview the user to break features into stories
+If the PRD doesn't exist, STOP:
+```
+ERROR: No PRD found at .planning/PRD.md
+This command COMPILES from a PRD — it cannot generate one.
+Run /write-a-prd first.
+```
 
-Present the PRD sections as candidate entries, then ask the user to
-confirm or edit each. Each entry should be **one build iteration** —
-sized so Ralph can implement it end-to-end in one Claude invocation.
+### Step 2: Extract BUILD stories from PRD
 
-Guide rails for sizing:
+Read the PRD's Buildable User Stories section. For each story marked
+`BUILD`, extract these sections verbatim — do NOT rephrase, summarize,
+or interpret:
 
-- **Too big**: "Build the authentication system" — break into schema,
-  login API, signup API, login UI, signup UI, middleware.
-- **Too small**: "Add a log statement" — fold into the parent feature.
-- **Right size**: "Login API endpoint — `POST /api/auth/login` validates
-  credentials against the users table, issues a session cookie, returns
-  `{ user: { id, email } }` on success, `401` on failure. Covers the
-  happy path + invalid-credentials counterexample."
+1. **Story ID** and **Short Title**
+2. **Actor** and **Story sentence** ("As a..., I want..., so that...")
+3. **Decision Backing** (DEC-NNN list)
+4. **Decision Metadata** (lowest confidence, hardest reversibility, widest scope-risk)
+5. **In Scope** items (with DEC references)
+6. **Out of Scope** items (with DEC references)
+7. **Acceptance Criteria** (with DEC references)
+8. **Verification Anchors** (Route, Action, UI)
+9. **Escalation Conditions**
+10. **Completeness Verifiability** description
+11. **Notes for Downstream Builders**
+12. **Dependencies** on other stories
+13. **Screen/Wireframe** reference
+14. **Priority** (MUST / SHOULD)
 
-For each story confirmed, collect:
+<HARD-GATE>
+If ANY BUILD story in the PRD is missing acceptance criteria or decision
+backing, STOP. Do not compile an incomplete PRD.
 
-- **id** — kebab-case with category prefix, e.g. `infra-001`, `auth-003`,
-  `billing-007`. Category + sequential number.
-- **category** — one of Huntley's: `data`, `layout`, `ui`, `crud`,
-  `settings`, `interaction`.
-- **description** — the "what + why" in one sentence.
-- **page** — UI route (e.g. `/login`) or `"N/A — Backend"` for pure
-  backend work.
-- **ui_details** — visual spec from the UI brief; `"N/A"` for backend.
-- **behavior** — the full spec of what this feature does; should be
-  long enough that Ralph doesn't need to ask follow-up questions.
-- **data_model** — reference to schema tables involved, or
-  `"See section X of build-spec.md"` if you're writing one.
-- **priority** — integer (1-N). Lower = earlier.
-- **core** — `true` if other features depend on it; `false` for
-  leaf features.
-- **tests** — skeleton with:
-  - `unit: [{ name, description, input, expected_output }]`
-  - `e2e: [{ name, steps: [], expected }]`
-  - `edge_cases: [{ name, steps: [], expected }]`
-- **passes** — always `false` on initial write; Ralph flips to `true`.
+```
+COMPILATION BLOCKED: Story [ID] has no acceptance criteria.
+A PRD without testable acceptance criteria produces vague prd.json
+entries that the builder fills with guesses.
 
-### Step 3: Topologically sort by priority
+Fix the PRD first: /write-a-prd
+```
+</HARD-GATE>
 
-Sort by `priority` ascending. Within the same priority, keep the user's
-entry order. Verify no cycle between `core` dependencies — if feature A
-depends on feature B, A's `priority > B's priority`.
+### Step 3: Dependency-sort into priority order
 
-### Step 4: Write `ralph/prd.json` as a flat array
+1. Build a dependency graph from each story's `Dependencies` field.
+2. Topological sort: stories with no dependencies come first.
+3. Within the same dependency level, MUST before SHOULD.
+4. Assign integer `priority` values (1, 2, 3, ...) from the sorted order.
+5. Mark `core: true` for any story that appears in another story's
+   dependencies list.
 
-```ts
-import { writeFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+Verify no cycles. If cycles exist, STOP and report:
+```
+COMPILATION BLOCKED: Circular dependency detected:
+  Story S03 → Story S07 → Story S03
+Fix the PRD's dependency declarations before compiling.
+```
 
-const outPath = flags.out ?? "ralph/prd.json";
-await mkdir(dirname(outPath), { recursive: true });
-await writeFile(outPath, JSON.stringify(entries, null, 2));
+### Step 4: Compile each story into a prd.json entry
+
+For each BUILD story, compile the entry using these exact mapping rules.
+**No field may be filled by LLM judgment. Every value traces to a
+specific PRD section.**
+
+#### 4a. The `id` field
+
+Convert the PRD story ID to kebab-case with a category prefix:
+- `Story S01 - Login API` → `auth-001`
+- `Story S05 - Dashboard Layout` → `layout-005`
+
+Category prefix from the story's primary domain. If ambiguous, use the
+first module mentioned in the story's In Scope section.
+
+#### 4b. The `category` field
+
+Map to one of Huntley's categories:
+- Data/schema/migration → `data`
+- Layout/navigation/shell → `layout`
+- Frontend/visual/component → `ui`
+- CRUD/API/endpoint → `crud`
+- Settings/config/preferences → `settings`
+- Interaction/workflow/real-time → `interaction`
+
+If a story spans multiple categories, use the primary one (where most
+acceptance criteria live).
+
+#### 4c. The `description` field
+
+Copy the story sentence verbatim: "As a [actor], I want [capability],
+so that [outcome]."
+
+Do NOT rephrase.
+
+#### 4d. The `page` field
+
+Copy the Screen/Wireframe reference. If the story says `"N/A - backend"`,
+use `"N/A — Backend"`.
+
+#### 4e. The `ui_details` field
+
+If `.planning/ui-brief.md` exists and the story's module is covered:
+- Extract the relevant typography, color, spacing, component specs
+- Include CSS variable references from the brief
+
+If no ui-brief exists or the story is backend: `"N/A"`.
+
+Do NOT invent visual specs.
+
+#### 4f. The `behavior` field (ENRICHED — the critical field)
+
+This is where the metadata that would otherwise be lost gets injected.
+Compile the behavior field from 7 PRD sub-sections in this exact
+structure:
+
+```markdown
+## What This Does
+[Copy the story sentence + Business Value from PRD]
+
+## Acceptance Criteria (EARS format)
+[Copy EVERY acceptance criterion verbatim from the PRD in EARS format]
+- WHEN [trigger] THE SYSTEM SHALL [behavior] (DEC-NNN)
+- WHEN [trigger] THE SYSTEM SHALL [behavior] (DEC-NNN)
+- IF [error condition] THEN THE SYSTEM SHALL [fallback behavior] (DEC-NNN)
+
+## In Scope
+[Copy In Scope items verbatim]
+- [Item] (DEC-NNN)
+
+## Out of Scope — DO NOT BUILD THESE
+[Copy Out of Scope items verbatim. This section is critical — it tells
+the builder what to EXCLUDE.]
+- [Item] (DEC-NNN)
+
+## Escalation Conditions — STOP AND ABORT IF
+[Copy Escalation Conditions verbatim. The builder must ABORT (not
+work around) if any of these trigger.]
+- [Condition]
+- [Condition]
+[If the PRD says "None — proceed autonomously", copy that.]
+
+## Risk Flags
+- Decision backing: [DEC-NNN, DEC-NNN, ...]
+- Lowest confidence: [HIGH/MEDIUM/LOW]
+- Hardest reversibility: [EASY/MODERATE/HARD]
+- Widest scope-risk: [LOCAL/MODULE/SYSTEM]
+[If LOW confidence or HARD reversibility, copy the PRD's warning:]
+- ⚠ [Warning text from PRD about the specific risky DEC]
+
+## Verification Anchors
+- Route: [route path]
+- Action: [server action / API handler]
+- UI: [screen > element description]
+
+## Completeness Check
+[Copy the Completeness Verifiability text — this tells the completeness
+auditor exactly how to verify this story exists in the running code.]
+
+## Builder Notes
+[Copy Notes for Downstream Builders verbatim]
+```
+
+<HARD-GATE>
+The `behavior` field MUST contain all 7 sections. If the PRD story is
+missing a section, use the appropriate empty marker:
+
+- Missing acceptance criteria: COMPILATION BLOCKED (see Step 2 gate)
+- Missing out-of-scope: `## Out of Scope — DO NOT BUILD THESE\nNone declared.`
+- Missing escalation conditions: `## Escalation Conditions — STOP AND ABORT IF\nNone — proceed autonomously.`
+- Missing risk flags: Extract from decision-index.md using the DEC-NNN IDs
+- Missing verification anchors: `## Verification Anchors\nNone declared — auditor should verify via acceptance criteria.`
+- Missing completeness check: `## Completeness Check\nVerify acceptance criteria pass from the running app.`
+- Missing builder notes: `## Builder Notes\nNone.`
+</HARD-GATE>
+
+#### 4g. The `data_model` field
+
+From the PRD's Implementation Decisions section, extract the schema/data
+references relevant to this story. If the story's DEC-NNN IDs include
+data-grill decisions, reference the relevant data subjects.
+
+If no data model is relevant: `"N/A"`.
+
+#### 4h. The `tests` field
+
+Compile from the PRD's acceptance criteria and verification anchors:
+
+```json
+{
+  "unit": [
+    {
+      "name": "[test name derived from acceptance criterion]",
+      "description": "[the acceptance criterion text]",
+      "input": "[implied input from the criterion]",
+      "expected_output": "[the observable outcome from the criterion]",
+      "source": "[DEC-NNN that backs this criterion]"
+    }
+  ],
+  "e2e": [
+    {
+      "name": "[end-to-end scenario name]",
+      "steps": ["[step 1 from verification anchors]", "[step 2]"],
+      "expected": "[expected outcome]",
+      "source": "[DEC-NNN]"
+    }
+  ],
+  "edge_cases": [
+    {
+      "name": "[edge case from Builder Notes or Out of Scope boundaries]",
+      "steps": ["[trigger the edge case]"],
+      "expected": "[expected behavior at the boundary]",
+      "source": "[DEC-NNN if applicable]"
+    }
+  ]
+}
+```
+
+**Mapping rules for tests:**
+- Each acceptance criterion → at least 1 unit test
+- Each verification anchor with a Route → at least 1 e2e test
+- Each Out of Scope item → at least 1 edge_case test (verify the
+  builder did NOT build it)
+- Each Escalation Condition → at least 1 edge_case test (verify the
+  boundary is respected)
+
+The `source` field traces each test back to a decision. This is how
+the QA agent knows WHY each test exists.
+
+#### 4i. The `fail_to_pass` field (test oracle)
+
+Pin the exact test names the builder MUST use. This is the deterministic
+oracle — QA verifies these specific test names exist and pass.
+
+```json
+"fail_to_pass": [
+  "auth.login.returns-jwt-on-valid-credentials",
+  "auth.login.rejects-expired-token",
+  "auth.login.rate-limits-after-5-failures"
+]
+```
+
+**Naming convention:** `{module}.{feature}.{behavior-in-kebab-case}`
+
+Generate one `fail_to_pass` entry per:
+- Each unit test in `tests.unit` → use the `name` field
+- Each e2e test in `tests.e2e` → use the `name` field prefixed with `e2e.`
+- Each edge case in `tests.edge_cases` → use the `name` field prefixed with `edge.`
+
+The builder MUST name its test files and test descriptions to match
+these entries. The QA agent verifies the exact names exist in the test
+suite output.
+
+### Step 4j. Checkpoint gate — validate compiled entry before continuing
+
+After compiling EACH story entry, validate it immediately before moving
+to the next story. Do not batch all stories then validate at the end.
+
+```python
+def validate_entry(entry, idx):
+    errors = []
+    beh = entry.get('behavior', '')
+    for section in ['## Acceptance Criteria', '## Out of Scope', '## Escalation Conditions',
+                    '## Risk Flags', '## Verification Anchors', '## Completeness Check', '## Builder Notes']:
+        if section not in beh:
+            errors.append(f'entry {idx} ({entry.get("id","?")}) missing behavior section: {section}')
+    if not entry.get('fail_to_pass'):
+        errors.append(f'entry {idx} ({entry.get("id","?")}) has empty fail_to_pass')
+    for t in entry.get('tests', {}).get('unit', []):
+        if not t.get('source'):
+            errors.append(f'entry {idx} ({entry.get("id","?")}) test "{t.get("name","?")}" missing DEC source')
+    # EARS format check: at least one AC uses WHEN/SHALL or IF/THEN
+    ac_section = beh.split('## Acceptance Criteria')[1].split('##')[0] if '## Acceptance Criteria' in beh else ''
+    if ac_section and 'SHALL' not in ac_section and 'SHALL' not in ac_section.upper():
+        errors.append(f'entry {idx} ({entry.get("id","?")}) acceptance criteria not in EARS format (missing SHALL)')
+    return errors
+```
+
+If any entry fails the checkpoint, STOP and report. Do not write
+partial prd.json with some entries valid and others broken.
+
+### Step 5: Generate per-story spec files (full-spec-per-iteration)
+
+For each compiled story, write a standalone spec file that contains the
+FULL PRD story text — uncompressed, with all context a builder needs.
+
+```bash
+mkdir -p ralph/specs
+```
+
+For each story entry, write `ralph/specs/{story-id}.md`:
+
+```markdown
+# Spec: {story-id} — {description}
+
+## Original PRD Story Text
+[Copy the ENTIRE PRD story section verbatim — all fields, all sections,
+all decision backing, all risk metadata. This is the FULL context.]
+
+## Compiled prd.json Entry Reference
+id: {id}
+priority: {priority}
+category: {category}
+fail_to_pass: {fail_to_pass list}
+
+## Domain Glossary (if applicable)
+[Terms from CONTEXT.md that appear in this story]
+```
+
+The build-prompt instructs the builder to read
+`ralph/specs/{story-id}.md` for full context when the compressed
+`behavior` field in prd.json isn't sufficient. This is the
+full-spec-per-iteration pattern — the builder always has access to
+the uncompressed original.
+
+### Step 5a: Inject domain glossary
+
+If `.planning/CONTEXT.md` exists, extract glossary terms that appear in
+the compiled entries. Append a glossary block to the FIRST entry's
+`behavior` field and to each `ralph/specs/{id}.md` file:
+
+```markdown
+## Domain Glossary (applies to all stories)
+| Term | Definition | Source |
+|------|-----------|--------|
+| [term] | [definition] | DEC-NNN |
+```
+
+This ensures the builder has precise definitions without needing to
+read .planning/ files.
+
+### Step 5b: Checkpoint gate — validate glossary + spec files
+
+Before writing prd.json, verify:
+1. Every glossary term referenced in behavior fields has a definition
+   (either in the FIRST entry's glossary block or in the spec file).
+2. Every `ralph/specs/{id}.md` file exists for each compiled entry.
+3. Every `fail_to_pass` entry matches a test name in the `tests` field.
+
+```python
+for entry in entries:
+    spec_path = f"ralph/specs/{entry['id']}.md"
+    assert os.path.exists(spec_path), f"Missing spec file: {spec_path}"
+    ftp = set(entry.get('fail_to_pass', []))
+    test_names = set()
+    for t in entry.get('tests', {}).get('unit', []):
+        test_names.add(t['name'])
+    for t in entry.get('tests', {}).get('e2e', []):
+        test_names.add(f"e2e.{t['name']}")
+    for t in entry.get('tests', {}).get('edge_cases', []):
+        test_names.add(f"edge.{t['name']}")
+    orphans = ftp - test_names
+    assert not orphans, f"fail_to_pass entries without matching tests: {orphans}"
+```
+
+### Step 6: Write `ralph/prd.json` as a flat array
+
+```bash
+mkdir -p ralph
+# Write the compiled entries
+python3 -c "
+import json, sys
+entries = json.load(sys.stdin)
+assert isinstance(entries, list), 'must be flat array'
+with open('ralph/prd.json', 'w') as f:
+    json.dump(entries, f, indent=2)
+print(f'Wrote {len(entries)} entries to ralph/prd.json')
+"
 ```
 
 <HARD-GATE>
@@ -114,47 +457,105 @@ counting pattern. Do not emit `{ "userStories": [...] }` or
 `{ "items": [...] }` — the top-level JSON value MUST be `[ ... ]`.
 </HARD-GATE>
 
-### Step 5: Sanity-check the shape
+### Step 7: Sanity-check the shape AND content
 
-Run a local validator that mimics Huntley's runtime checks:
+Run a validator that checks BOTH structural shape and content quality:
 
 ```bash
 python3 -c "
 import json
 d = json.load(open('ralph/prd.json'))
 assert isinstance(d, list), 'prd.json must be a flat array'
-required = {'id','category','description','page','ui_details','behavior','data_model','priority','core','passes','tests'}
+
+required = {'id','category','description','page','ui_details','behavior','data_model','priority','core','passes','tests','fail_to_pass'}
 test_keys = {'unit','e2e','edge_cases'}
+behavior_sections = ['## Acceptance Criteria', '## Out of Scope', '## Escalation Conditions', '## Risk Flags', '## Verification Anchors', '## Completeness Check', '## Builder Notes']
+
+errors = []
 for i, entry in enumerate(d):
     missing = required - set(entry.keys())
-    assert not missing, f'entry {i} missing keys: {missing}'
-    assert entry['passes'] is False, f'entry {i} must start with passes=false'
-    assert set(entry['tests'].keys()) >= test_keys, f'entry {i} tests missing {test_keys - set(entry[\"tests\"].keys())}'
-print(f'OK: {len(d)} entries, all shape-valid')
+    if missing:
+        errors.append(f'entry {i} missing keys: {missing}')
+    if entry.get('passes') is not False:
+        errors.append(f'entry {i} must start with passes=false')
+    if 'tests' in entry:
+        tmissing = test_keys - set(entry['tests'].keys())
+        if tmissing:
+            errors.append(f'entry {i} tests missing {tmissing}')
+    # Content quality: check behavior has structured sections
+    beh = entry.get('behavior', '')
+    for section in behavior_sections:
+        if section not in beh:
+            errors.append(f'entry {i} ({entry.get(\"id\",\"?\")}) behavior missing section: {section}')
+    # EARS format: acceptance criteria must contain at least one SHALL
+    ac_start = beh.find('## Acceptance Criteria')
+    if ac_start >= 0:
+        ac_end = beh.find('##', ac_start + 1)
+        ac_text = beh[ac_start:ac_end] if ac_end > ac_start else beh[ac_start:]
+        if 'SHALL' not in ac_text:
+            errors.append(f'entry {i} ({entry.get(\"id\",\"?\")}) acceptance criteria not in EARS format (missing SHALL keyword)')
+    # fail_to_pass must not be empty
+    if not entry.get('fail_to_pass'):
+        errors.append(f'entry {i} ({entry.get(\"id\",\"?\")}) has empty or missing fail_to_pass')
+
+if errors:
+    for e in errors:
+        print(f'ERROR: {e}')
+    raise SystemExit(1)
+print(f'OK: {len(d)} entries, all shape-valid, all behavior sections present')
 "
 ```
 
-Abort on any assertion failure.
+Abort on ANY error. Do not proceed with a structurally incomplete prd.json.
 
-### Step 6: Print the handoff message
+### Step 8: Write the compilation manifest
+
+Save a manifest alongside prd.json so the pipeline is auditable:
+
+```bash
+cat > ralph/compilation-manifest.md << 'EOF'
+# prd.json Compilation Manifest
+**Compiled at:** [ISO timestamp]
+**Source PRD:** [path]
+**PRD decision count:** [N] decisions compiled
+**Stories compiled:** [N] BUILD stories
+
+## Compilation Map
+| prd.json ID | PRD Story | DEC Backing | Risk Level | Escalation? |
+|-------------|-----------|-------------|------------|-------------|
+| [id] | Story [ID] | DEC-NNN, ... | [HIGH/MED/LOW risk] | [yes/no] |
+
+## Glossary injected: [yes/no] ([N] terms)
+## UI brief used: [yes/no]
+## Data requirements used: [yes/no]
+
+## Verification
+- Shape validation: PASSED
+- Content validation: PASSED (all behavior sections present)
+- EARS format: PASSED (all AC use WHEN/SHALL or IF/THEN)
+- Dependency sort: [N] stories, 0 cycles
+- Test coverage: [N] unit, [N] e2e, [N] edge_case skeletons
+- fail_to_pass oracles: [N] total test names pinned
+- Spec files: [N] files in ralph/specs/
+- Checkpoint gates: 2/2 passed (per-entry + pre-write)
+EOF
+```
+
+### Step 9: Print the handoff message
 
 ```
-✅ ralph/prd.json written — N entries, all passes=false.
+✅ ralph/prd.json compiled — N entries, all passes=false.
+   Compilation mode: DETERMINISTIC (zero LLM interpretation)
+   Every behavior field contains: acceptance criteria, out-of-scope,
+   escalation conditions, risk flags, verification anchors.
+
+   Manifest: ralph/compilation-manifest.md
 
 You're ready for Ralph.
 
 Next steps:
-  1. Scaffold the Ralph scripts + prompts (DO NOT download Huntley's raw
-     scripts — they reference his product-cloning infra, AWS SES, Ever CLI,
-     clone-product-docs/, which you don't have):
+  1. Scaffold the Ralph scripts + prompts:
        /playbook:scaffold-ralph
-
-     This drops adapted templates into ralph/:
-       ralph/build.sh              — Huntley's build loop, adapted
-       ralph/build-prompt.md       — build agent instructions (customize per app)
-       ralph/qa.sh                 — Codex QA loop (independent evaluator)
-       ralph/qa-prompt.md          — QA agent instructions (customize per app)
-       ralph/run.sh                — master script, chains build → QA
 
   2. Customize ralph/build-prompt.md and ralph/qa-prompt.md — fill in the
      CUSTOMIZE sections with your app's module paths, quality-check commands,
@@ -164,54 +565,65 @@ Next steps:
        /playbook:ralph-watch
 
   4. Run the full three-layer flow:
-       ./ralph/run.sh                         # build (Claude Opus) → QA (Codex)
+       ./ralph/run.sh
 
   5. Then run YOUR hardened QA pipeline (the ungameable judge):
-       /playbook:install-qa-harness           # if not already installed
-       /playbook:define-quality-contracts     # for critical features
+       /playbook:install-qa-harness
+       /playbook:define-quality-contracts
        npm run qa:baseline
        npm run qa:run
-
-Reference Ralph repos (for learning the methodology — not to be cloned):
-  github.com/ghuntley/ralph-to-ralph-prod    — production-grade build+QA loops
-  github.com/ghuntley/how-to-ralph-wiggum    — how-to guide
-  github.com/ghuntley/ralph-os               — the pattern's origin
 ```
 
 ## Rules
 
-- NEVER wrap the array in an object. Top-level JSON value is `[...]`,
-  period. Huntley's `build-ralph.sh` iterates the array directly.
-- NEVER set `passes: true` on initial write. Only Ralph flips this
-  during its build loop.
-- NEVER invent features the PRD doesn't mention. If the PRD is vague
-  on a feature, STOP and ask the user instead of hallucinating.
-- NEVER ship Ralph's scripts from the playbook. The user pulls them
-  from Huntley's repo at build time. The playbook's responsibility
-  ends at writing `prd.json`.
-- ALWAYS include at least one `unit` test skeleton and one `e2e` test
-  skeleton per feature — otherwise Ralph's TDD discipline is
-  undermined.
-- ALWAYS sort by priority ascending. Core dependencies must come first.
-- ALWAYS keep `behavior` long enough (3+ sentences minimum) that Ralph
-  doesn't need to ask follow-up questions. Sparse `behavior` fields
-  produce sparse code.
+- NEVER wrap the array in an object. Top-level JSON value is `[...]`.
+- NEVER set `passes: true` on initial write.
+- NEVER invent features the PRD doesn't mention.
+- NEVER rephrase, summarize, or interpret PRD content. Copy verbatim.
+- NEVER fill a field with LLM judgment. Every value traces to a PRD section.
+- NEVER skip the behavior enrichment. All 7 sections are mandatory.
+- NEVER compile a story that lacks acceptance criteria — block compilation.
+- ALWAYS include the `source` field in test skeletons linking to DEC-NNN.
+- ALWAYS sort by priority ascending. Core dependencies come first.
+- ALWAYS keep `behavior` long enough (all 7 sections) that Ralph doesn't
+  need to ask follow-up questions.
+- ALWAYS write the compilation manifest for auditability.
+- ALWAYS write `ralph/specs/{id}.md` per-story spec files.
+- ALWAYS generate `fail_to_pass` test oracle names for every story.
+- ALWAYS use EARS format (WHEN/SHALL, IF/THEN) for acceptance criteria.
+- ALWAYS run checkpoint gates after each compiled entry AND before write.
+
+## Compilation vs the old interview approach
+
+| Aspect | Old (interview) | New (compiler) |
+|--------|-----------------|---------------|
+| LLM interpretation | Re-interprets PRD stories | Zero — copies verbatim |
+| Risk metadata | Lost | Injected into behavior field |
+| Escalation conditions | Lost | Injected into behavior field |
+| Out-of-scope | Compressed/lost | Explicit section in behavior |
+| DEC traceability | Lost | In risk flags + test sources |
+| Verification anchors | Lost | Explicit section in behavior |
+| Domain glossary | Lost | Injected into first entry |
+| Acceptance criteria | Rewritten as prose | Copied verbatim with DEC refs |
+| Determinism | Low (LLM judgment) | High (documented mapping rules) |
+| Test oracle | None (builder names tests freely) | fail_to_pass pins exact names |
+| AC format | Prose | EARS (WHEN/SHALL, IF/THEN) |
+| Full spec access | Lost after compression | ralph/specs/{id}.md per story |
+| Validation | End-to-end only | Checkpoint gates per-entry + pre-write |
+| Auditability | None | Compilation manifest |
 
 ## Integration with the playbook
 
+- Runs after `/write-a-prd` produces `.planning/PRD.md`.
 - Runs after `/playbook:define-quality-contracts` — both consume the
-  PRD, but produce different artifacts:
-  - `define-quality-contracts` → `.quality/contracts/<feature>/` (the
-    ungameable oracle).
-  - `prd-to-ralph` → `ralph/prd.json` (the build task list).
+  PRD, but produce different artifacts.
 - After Ralph finishes, the user runs `/playbook:wire-selectors` per
-  feature to reconcile the `data-testid` selectors in contracts with
-  the DOM Ralph produced.
+  feature to reconcile selectors.
 - Then `/playbook:qa-run` enforces the contracts against the built app.
 
 ## Not in scope
 
-- Ralph's build loop, QA loop, watchdog, or progress monitoring. All
-  external to the playbook by design.
-- Progress monitoring (watch.sh posting to Slack/Linear) — not shipped
-  here; user maintains this in the target app if desired.
+- Ralph's build loop, QA loop, watchdog, or progress monitoring.
+- The compilation does not VALIDATE the PRD's quality — that's
+  `/write-a-prd`'s job (quality gate, cross-reference verification).
+  This compiler assumes the PRD is already validated and complete.

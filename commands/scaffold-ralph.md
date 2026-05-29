@@ -45,6 +45,11 @@ In the target app's `ralph/` directory:
 | `ralph/harden-security-prompt.template.md` | Security agent instructions. OWASP Top 10 category table with specific patterns per code. Rename to `harden-security-prompt.md`. |
 | `ralph/watch.sh` | Optional Slack + Linear progress monitor. |
 | `ralph/RESUME.md` | Stall recovery runbook in plain English. What to check, how to soft/hard interrupt, how to triage untracked files, how to restart. Read this BEFORE you panic at 2am. |
+| `.claude/hooks/pre-commit-quality-gate.sh` | Claude Code PreToolUse hook. Intercepts `git commit` calls and runs `npx tsc --noEmit` + `npm run lint --if-present` first. Blocks the commit if either fails. Bypass: `SKIP_QUALITY_GATE=1`. |
+| `.claude/hooks/goal-acceptance-gate.sh` | Claude Code Stop hook for `/goal` mode. Fires after each worker turn. When the worker signals completion, runs deterministic fail_to_pass verification + tsc + lint. Blocks until all checks pass. Only active when `ralph/goal-current-story.txt` exists (written by goal scripts). |
+| `ralph/goal-build.sh` | Goal-mode build. Runs a single story via Claude Code `/goal` instead of the bash loop. Auto-swaps CLAUDE.md to lean version, sets `CLAUDE_CODE_GOAL_MAX_STOP_CONTINUES`, cleans up on exit. Usage: `./ralph/goal-build.sh <story-id>`. |
+| `ralph/goal-qa.sh` | Goal-mode QA. Verifies a single built story via `/goal` with independent evaluation. Same auto-swap and cleanup as goal-build.sh. Usage: `./ralph/goal-qa.sh <story-id>`. |
+| `ralph/CLAUDE.goal.template.md` | Lean CLAUDE.md (<80 lines) optimized for `/goal` judge. Judge (Haiku) reads CLAUDE.md every evaluation tick — a 500-line CLAUDE.md wastes judge tokens. Rename to `CLAUDE.goal.md` after customizing. |
 
 ## Flags
 
@@ -94,6 +99,7 @@ if (!playbookRoot) {
   );
 }
 const templatesDir = resolve(playbookRoot, "playbook/qa-scaffold/templates/ralph");
+const hooksTemplatesDir = resolve(playbookRoot, "playbook/qa-scaffold/templates/.claude/hooks");
 ```
 
 ### Step 2: Copy templates into target app's `ralph/`
@@ -134,6 +140,11 @@ const TEMPLATE_MAP: Array<[string, string]> = [
   ["run.sh", "run.sh"],
   ["watch.sh", "watch.sh"],
   ["RESUME.md", "RESUME.md"],
+
+  // Goal mode — /goal integration (Claude Code Worker/Judge pattern)
+  ["goal-build.sh", "goal-build.sh"],
+  ["goal-qa.sh", "goal-qa.sh"],
+  ["CLAUDE.goal.template.md", "CLAUDE.goal.template.md"],
 ];
 
 for (const [src, dst] of TEMPLATE_MAP) {
@@ -155,6 +166,34 @@ for (const [src, dst] of TEMPLATE_MAP) {
   }
   console.log(`wrote: ${dstPath}`);
 }
+
+// --- Claude Code hooks (installed into target .claude/hooks/) ---
+const HOOK_MAP: Array<[string, string]> = [
+  // [src name in templates/.claude/hooks/, dst name in target .claude/hooks/]
+  ["pre-commit-quality-gate.sh", "pre-commit-quality-gate.sh"],
+  ["goal-acceptance-gate.sh", "goal-acceptance-gate.sh"],
+];
+
+const targetHooks = pathResolve(process.cwd(), ".claude/hooks");
+await fs.mkdir(targetHooks, { recursive: true });
+
+for (const [src, dst] of HOOK_MAP) {
+  const srcPath = join(hooksTemplatesDir, src);
+  const dstPath = join(targetHooks, dst);
+  const exists = await fs.access(dstPath).then(() => true).catch(() => false);
+
+  if (exists && !flags.force) {
+    console.log(`skip: ${dstPath} (already exists — pass --force to overwrite)`);
+    continue;
+  }
+  if (flags.dryRun) {
+    console.log(`would copy: ${src} → ${dstPath}`);
+    continue;
+  }
+  await fs.copyFile(srcPath, dstPath);
+  await fs.chmod(dstPath, 0o755);
+  console.log(`wrote: ${dstPath}`);
+}
 ```
 
 ### Step 3: Print customization checklist
@@ -166,6 +205,7 @@ for (const [src, dst] of TEMPLATE_MAP) {
    Tier 3: harden-completeness.sh, harden-adversarial.sh,
            harden-drift.sh, harden-security.sh
    + run.sh orchestrator
+   + .claude/hooks/pre-commit-quality-gate.sh (Tier 1 commit gate)
 
 Next (required before running):
 
@@ -195,7 +235,13 @@ Next (required before running):
 5. Ensure /playbook:install-qa-harness has been run — harden.sh, drift,
    and the qa-controller require the .quality/ tree to exist.
 
-6. Run:
+6. Register the pre-commit quality gate hook in .claude/settings.json:
+   Add a PreToolUse hook entry pointing to .claude/hooks/pre-commit-quality-gate.sh
+   so Claude Code runs typecheck + lint before every git commit. The hook
+   was copied to .claude/hooks/ automatically. Bypass with SKIP_QUALITY_GATE=1
+   if needed in emergencies.
+
+7. Run:
    ./ralph/run.sh                # build → qa → harden, 999 iters each
    ./ralph/run.sh 50 50 50       # cap each phase at 50 iters
    BUILD_SKIP=1 QA_SKIP=1 ./ralph/run.sh    # run just the harden phase
@@ -214,11 +260,36 @@ Next (required before running):
    HARDEN_MODEL=claude-opus-4-6 ./ralph/harden.sh 10
    COMPLETENESS_MODEL=claude-sonnet-4-6 ./ralph/harden-completeness.sh 5
 
-7. (Optional) In a second terminal, monitor on Slack + Linear:
+8. (Optional) Goal-mode — build individual stories via Claude Code /goal:
+
+   First, customize the lean CLAUDE.md for goal mode:
+   - ralph/CLAUDE.goal.template.md → CLAUDE.goal.md
+     Replace {APP_NAME}, fill CUSTOMIZE blocks with your app's rules.
+     Keep it under 200 lines — the judge (Haiku) reads it every tick.
+
+   Register the goal acceptance gate hook in .claude/settings.json:
+   Add a Stop hook entry pointing to .claude/hooks/goal-acceptance-gate.sh.
+   This hook runs deterministic verification (fail_to_pass tests, tsc, lint)
+   after each worker turn during /goal runs.
+
+   Then generate goal conditions and run:
+   /playbook:ralph-goal <story-id>       # generates goal condition files
+   ./ralph/goal-build.sh <story-id>      # build via /goal (CLI)
+   ./ralph/goal-qa.sh <story-id>         # QA via /goal (CLI)
+
+   Or interactively in Claude Code:
+   /goal [paste contents of ralph/goals/<story-id>.build.goal]
+
+   Environment tuning:
+   export CLAUDE_CODE_GOAL_MAX_STOP_CONTINUES=5   # max judge retries
+   export GOAL_MODEL=claude-opus-4-6               # worker model
+   export QA_GOAL_MODEL=claude-opus-4-6            # QA worker model
+
+9. (Optional) In a second terminal, monitor on Slack + Linear:
    /playbook:ralph-watch
    SLACK_WEBHOOK_URL=... LINEAR_API_KEY=... LINEAR_TEAM_ID=... ./ralph/watch.sh
 
-8. After Ralph finishes, run the release gate — the ungameable judge:
+10. After Ralph finishes, run the release gate — the ungameable judge:
    /playbook:qa-run       # runs deterministic release gates, writes summary.md
 ```
 

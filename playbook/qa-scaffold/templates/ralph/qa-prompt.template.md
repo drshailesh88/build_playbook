@@ -40,6 +40,33 @@ everything from first principles against the PRD's `behavior` and `tests`.
 2. Read the entry's full spec — `behavior`, `ui_details`, `data_model`,
    and every test under `tests.unit`, `tests.e2e`, `tests.edge_cases`.
 
+### 2b. Parse the structured behavior field
+The `behavior` field contains 7 structured sections from the PRD. You
+must verify against ALL of them — not just the prose summary:
+
+- **## Acceptance Criteria (EARS format)** — your PRIMARY verification
+  checklist. Each criterion uses EARS syntax:
+  `WHEN [trigger] THE SYSTEM SHALL [behavior]` or
+  `IF [condition] THEN THE SYSTEM SHALL [behavior]`.
+  Parse the WHEN clause as your test trigger and the SHALL clause as
+  your assertion. Verify every single one. A feature that passes its
+  unit tests but fails an acceptance criterion is NOT done.
+- **## Out of Scope — DO NOT BUILD THESE** — verify the builder did NOT
+  build these. If excluded functionality exists, that's a bug (over-build).
+  Record it. Do not remove working code, but flag it in qa-report.json.
+- **## Escalation Conditions** — verify these boundaries are respected.
+  If an escalation condition should have triggered during build but the
+  builder worked around it instead of aborting, flag this as a HIGH
+  severity issue.
+- **## Risk Flags** — stories flagged as LOW confidence or HARD
+  reversibility deserve extra scrutiny. Test these more aggressively.
+- **## Verification Anchors** — check that the named routes, actions,
+  and UI elements exist and work as described.
+- **## Completeness Check** — follow the verification method described
+  here to confirm the story exists in the running code.
+- **## Builder Notes** — constraints the builder was supposed to follow.
+  Verify compliance.
+
 ### 3. Automated checks (fast fail)
 Run the project's full check suite:
 <!-- CUSTOMIZE: replace with YOUR app's exact commands. -->
@@ -56,22 +83,62 @@ If ANY of these fail:
 - Re-run the checks until green.
 - Record the bug + fix in `qa-report.json`.
 
-### 4. Independent behavioral verification
-Go beyond the automated checks. For each entry in `tests.e2e`, actually
-perform the user flow:
-- If the story is a UI page, navigate to it in a browser (use Playwright
-  MCP if available) and interact with it as a user would.
-- If the story is an API endpoint, curl it or invoke it from a Node shell.
-- Check the PRD's `behavior` text — does the feature do what the text says?
-  Not what the tests say. What the BEHAVIOR field says.
+**3b. FAIL_TO_PASS oracle verification:**
+Read the story's `fail_to_pass` field. This lists the EXACT test names
+the builder was required to create. Verify each one exists in the test
+suite output:
 
-Test these edge cases explicitly (they're commonly missed):
+```bash
+# Run tests with verbose output and check for each pinned name
+npm run test:run -- --reporter=verbose 2>&1 | grep -c "test-name-here"
+```
+
+For each `fail_to_pass` entry:
+- If the test name exists and passes → oracle satisfied
+- If the test name is missing → severity=high bug: "builder did not
+  create required test {name}"
+- If the test name exists but fails → severity=high bug: "pinned test
+  {name} is failing"
+
+Record oracle results in `qa-report.json` under a new
+`fail_to_pass_checks` field.
+
+### 4. Independent behavioral verification
+Go beyond the automated checks. Verify against EACH structured section
+in the behavior field:
+
+**4a. Acceptance Criteria verification:**
+For each criterion in `## Acceptance Criteria`, verify it independently:
+- If it mentions a UI behavior, navigate to the page and test it.
+- If it mentions an API behavior, call the endpoint directly.
+- If it specifies a quantified threshold (e.g., "loads in under 2s"),
+  measure it.
+- Check: does the implementation satisfy the criterion as written?
+
+**4b. Out-of-Scope verification:**
+For each item in `## Out of Scope — DO NOT BUILD THESE`:
+- Verify the builder did NOT implement it.
+- If it was built anyway, record as severity=medium "over-build" issue.
+
+**4c. Verification Anchor check:**
+For each anchor in `## Verification Anchors`:
+- Route anchors: navigate to the route, confirm it loads.
+- Action anchors: invoke the action, confirm it executes.
+- UI anchors: find the named element on the page.
+
+**4d. Standard edge cases (always test):**
 - Empty inputs / empty arrays / null payloads.
 - Maximum-length inputs (names with 200 characters, notes with 10KB).
 - Concurrent actions (rapid clicks, double-submissions).
 - Unauthorized access attempts.
 - Stale data (reload during mid-mutation).
 - Error-state UX (what happens when the API fails?).
+
+**4e. Risk-proportional testing:**
+If `## Risk Flags` shows LOW confidence or HARD reversibility:
+- Double the edge case coverage for this story.
+- Test the specific concern named in the ⚠ warning.
+- Verify the rollback plan described in the risk flags is feasible.
 
 ### 5. Record findings
 For this feature, append to `ralph/qa-report.json`:
@@ -81,7 +148,34 @@ For this feature, append to `ralph/qa-report.json`:
   "qa_tested_at": "<ISO timestamp>",
   "qa_tested_by": "codex",
   "automated_checks": { "passed": true, "failures": [] },
-  "behavioral_checks": { "passed": true, "issues": [] },
+  "acceptance_criteria_checks": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "details": [
+      { "criterion": "<text>", "dec": "DEC-NNN", "result": "pass|fail" }
+    ]
+  },
+  "out_of_scope_checks": {
+    "total": 2,
+    "violations": 0,
+    "details": [
+      { "item": "<excluded thing>", "result": "not-built|over-built" }
+    ]
+  },
+  "verification_anchor_checks": {
+    "route": "pass|fail|N/A",
+    "action": "pass|fail|N/A",
+    "ui": "pass|fail|N/A"
+  },
+  "fail_to_pass_checks": {
+    "total": 3,
+    "found": 3,
+    "passing": 3,
+    "missing": [],
+    "failing": []
+  },
+  "risk_level": "high|medium|low",
   "bugs_found": [
     {
       "severity": "high|medium|low",

@@ -27,6 +27,11 @@ QA_PROGRESS=ralph/qa-progress.txt
 ITER_TIMEOUT=1800
 SLEEP_BETWEEN=3
 
+# Circuit breaker — deterministic gutter detection
+CONSECUTIVE_NO_QA=0
+MAX_CONSECUTIVE_NO_QA="${MAX_CONSECUTIVE_NO_QA:-3}"
+CIRCUIT_BREAKER_TRIGGERED=""
+
 CODEX_ACC1="${CODEX_ACC1:-$HOME/.codex-acc1}"
 CODEX_ACC2="${CODEX_ACC2:-$HOME/.codex-acc2}"
 CODEX_SINGLE_ACCOUNT="${CODEX_SINGLE_ACCOUNT:-0}"
@@ -73,7 +78,18 @@ count_built() {
   python3 -c "import json; d=json.load(open('$PRD')); print(sum(1 for x in d if x.get('passes', False)))"
 }
 count_qad() {
-  python3 -c "import json; d=json.load(open('$QA_REPORT')); print(len({x['story_id'] for x in d if x.get('story_id')}))"
+  # Count from prd.json (qa_tested:true) to stay consistent with the QA
+  # prompt's selection criteria (passes:true AND qa_tested missing/false).
+  # Also cross-check with qa-report.json to catch desync.
+  python3 -c "
+import json
+prd = json.load(open('$PRD'))
+report = json.load(open('$QA_REPORT'))
+prd_qad = sum(1 for x in prd if x.get('qa_tested', False))
+report_ids = len({x['story_id'] for x in report if x.get('story_id')})
+# Use the minimum to avoid false completion signals from desync
+print(min(prd_qad, report_ids))
+"
 }
 validate_account() {
   local dir="$1"
@@ -128,8 +144,8 @@ try_codex() {
   fi
   echo "[grader] trying codex/$label ($dir)..." >&2
   local output exitcode
-  output=$(CODEX_HOME="$dir" "${TIMEOUT_CMD[@]}" codex exec --dangerously-bypass-approvals-and-sandbox "$prompt" 2>&1) || true
-  exitcode=$?
+  exitcode=0
+  output=$(CODEX_HOME="$dir" "${TIMEOUT_CMD[@]}" codex exec --dangerously-bypass-approvals-and-sandbox "$prompt" 2>&1) || exitcode=$?
 
   local output_tail
   output_tail=$(printf '%s\n' "$output" | tail -n 30)
@@ -197,6 +213,7 @@ run_grader_with_failover() {
 for i in $(seq 1 "$MAX_ITER"); do
   BUILT=$(count_built)
   QAD=$(count_qad)
+  QAD_BEFORE=$QAD
   REMAINING=$((BUILT - QAD))
   echo ""
   echo "═══ QA iter $i/$MAX_ITER — $QAD/$BUILT QA'd ($REMAINING remaining) ══"
@@ -263,6 +280,21 @@ Output <promise>ABORT</promise> if blocked (explain why above the tag)."
     echo "No usable promise tag (exit=$RC, quota_signals=$quota_tail). Restarting iteration."
   fi
 
+  # Circuit breaker — check if QA count increased
+  QAD_AFTER=$(count_qad)
+  if [ "$QAD_AFTER" -gt "$QAD_BEFORE" ]; then
+    CONSECUTIVE_NO_QA=0
+  else
+    CONSECUTIVE_NO_QA=$((CONSECUTIVE_NO_QA + 1))
+    echo "[circuit-breaker] no new QA'd stories this iteration (consecutive: $CONSECUTIVE_NO_QA/$MAX_CONSECUTIVE_NO_QA)"
+    if [ "$CONSECUTIVE_NO_QA" -ge "$MAX_CONSECUTIVE_NO_QA" ]; then
+      echo ""
+      echo "CIRCUIT BREAKER: $CONSECUTIVE_NO_QA consecutive iterations with no QA progress. Agent is stuck." >&2
+      CIRCUIT_BREAKER_TRIGGERED="$CONSECUTIVE_NO_QA consecutive no-progress iterations"
+      break
+    fi
+  fi
+
   sleep "$SLEEP_BETWEEN"
 done
 
@@ -285,3 +317,9 @@ print(f'  bugs fixed:   {fixed}')
 print(f'  status tally: {by_status}')
 print('───────────────────────────────────────────────────────────────')
 PY
+
+if [ -n "$CIRCUIT_BREAKER_TRIGGERED" ]; then
+  echo "  CIRCUIT BREAKER: $CIRCUIT_BREAKER_TRIGGERED"
+  echo "───────────────────────────────────────────────────────────────"
+  exit 3
+fi

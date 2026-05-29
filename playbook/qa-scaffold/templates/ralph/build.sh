@@ -13,6 +13,14 @@ PROGRESS=ralph/progress.txt
 ITER_TIMEOUT=1800   # 30-minute hard wall-clock per iteration (gtimeout/timeout)
 SLEEP_BETWEEN=3
 
+# Circuit breaker — deterministic gutter detection
+CONSECUTIVE_NO_FLIP=0
+MAX_CONSECUTIVE_NO_FLIP="${MAX_CONSECUTIVE_NO_FLIP:-3}"
+STORY_WALL_CLOCK="${STORY_WALL_CLOCK:-2700}"  # 45 min total per story (across retries)
+SAME_STORY_START=""
+LAST_STORY_ID=""
+CIRCUIT_BREAKER_TRIGGERED=""
+
 if [ ! -f "$PRD" ]; then
   echo "ERROR: $PRD not found. Run /playbook:prd-to-ralph first." >&2
   exit 1
@@ -61,6 +69,23 @@ for i in $(seq 1 "$MAX_ITER"); do
     break
   fi
 
+  # Circuit breaker — record pre-iteration state
+  PASSES_BEFORE=$PASSES
+  CURRENT_STORY_ID=$(python3 -c "import json; d=json.load(open('$PRD')); print(next((x['id'] for x in d if not x.get('passes', False)), ''))")
+  if [ "$CURRENT_STORY_ID" != "$LAST_STORY_ID" ]; then
+    LAST_STORY_ID="$CURRENT_STORY_ID"
+    SAME_STORY_START=$(date +%s)
+  fi
+  if [ -n "$SAME_STORY_START" ] && [ -n "$CURRENT_STORY_ID" ]; then
+    ELAPSED_ON_STORY=$(( $(date +%s) - SAME_STORY_START ))
+    if [ "$ELAPSED_ON_STORY" -ge "$STORY_WALL_CLOCK" ]; then
+      echo ""
+      echo "CIRCUIT BREAKER: story '$CURRENT_STORY_ID' stuck for ${ELAPSED_ON_STORY}s (limit ${STORY_WALL_CLOCK}s)." >&2
+      CIRCUIT_BREAKER_TRIGGERED="wall-clock on story $CURRENT_STORY_ID (${ELAPSED_ON_STORY}s)"
+      exit 3
+    fi
+  fi
+
   RECENT_COMMITS=$(git log --grep='^RALPH:' -n 10 --format='%H%n%ad%n%B---' --date=short 2>/dev/null || echo '(no RALPH commits yet)')
 
   # Huntley-style single-string prompt argument — no intermediate heredoc.
@@ -83,19 +108,38 @@ Output <promise>ABORT</promise> if you cannot proceed (explain why above the tag
   # Full output — visible and captured.
   echo "$result"
 
-  if echo "$result" | grep -q '<promise>COMPLETE</promise>'; then
+  # Grep only the tail to avoid matching prompt-echo of promise tags
+  result_tail=$(printf '%s\n' "$result" | tail -n 40)
+
+  if echo "$result_tail" | grep -q '<promise>COMPLETE</promise>'; then
     echo ""
     echo "Ralph signaled COMPLETE."
     break
-  elif echo "$result" | grep -q '<promise>ABORT</promise>'; then
+  elif echo "$result_tail" | grep -q '<promise>ABORT</promise>'; then
     echo ""
     echo "Ralph signaled ABORT — a story is blocked. Stopping." >&2
     exit 2
-  elif echo "$result" | grep -q '<promise>NEXT</promise>'; then
+  elif echo "$result_tail" | grep -q '<promise>NEXT</promise>'; then
     :
   else
     echo ""
     echo "No promise tag found (exit=$CLAUDE_EXIT). Restarting iteration."
+  fi
+
+  # Circuit breaker — check if passes count increased
+  PASSES_AFTER=$(count_passes)
+  if [ "$PASSES_AFTER" -gt "$PASSES_BEFORE" ]; then
+    CONSECUTIVE_NO_FLIP=0
+    SAME_STORY_START=""
+  else
+    CONSECUTIVE_NO_FLIP=$((CONSECUTIVE_NO_FLIP + 1))
+    echo "[circuit-breaker] no new passes this iteration (consecutive: $CONSECUTIVE_NO_FLIP/$MAX_CONSECUTIVE_NO_FLIP)"
+    if [ "$CONSECUTIVE_NO_FLIP" -ge "$MAX_CONSECUTIVE_NO_FLIP" ]; then
+      echo ""
+      echo "CIRCUIT BREAKER: $CONSECUTIVE_NO_FLIP consecutive iterations with no new passes. Agent is stuck." >&2
+      CIRCUIT_BREAKER_TRIGGERED="$CONSECUTIVE_NO_FLIP consecutive no-flip iterations"
+      break
+    fi
   fi
 
   sleep "$SLEEP_BETWEEN"
@@ -106,4 +150,10 @@ DELTA=$((FINAL_PASSES - START_PASSES))
 echo ""
 echo "───────────────────────────────────────────────────────────────"
 echo "Ralph summary: $FINAL_PASSES/$TOTAL passing  (+$DELTA this run)"
+if [ -n "$CIRCUIT_BREAKER_TRIGGERED" ]; then
+  echo "  CIRCUIT BREAKER: $CIRCUIT_BREAKER_TRIGGERED"
+fi
 echo "───────────────────────────────────────────────────────────────"
+if [ -n "$CIRCUIT_BREAKER_TRIGGERED" ]; then
+  exit 3
+fi

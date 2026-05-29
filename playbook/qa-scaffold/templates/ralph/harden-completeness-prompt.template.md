@@ -74,17 +74,38 @@ Typical PRD sources:
 ### 4. Compute OUGHT − IS
 
 For each feature in OUGHT, check whether an equivalent capability exists
-in `ralph/completeness-is-list.json`. "Equivalent" allows limited semantic
-matching:
-- Same route / page / component name
-- Same behavior described in different words
-- Same user story exercised in a different UI flow
+in `ralph/completeness-is-list.json`. Use the structured `behavior` field
+for precise matching:
+
+**Route-level matching (deterministic):**
+- Check `## Verification Anchors` in the behavior field for the expected
+  Route. Does that route exist in `completeness-is-list.json.uiPages`?
+- Check for the expected Action. Does it exist in
+  `completeness-is-list.json.serverActions` or `.apiEndpoints`?
+
+**Acceptance-criteria matching (EARS-structured):**
+- Read `## Acceptance Criteria (EARS format)` from the behavior field.
+  Each criterion uses EARS syntax. Parse deterministically:
+  - Extract the WHEN clause → this is the trigger (identifies the
+    route, action, or UI element involved)
+  - Extract the SHALL clause → this is the expected behavior
+  - A criterion about an API endpoint → the endpoint must exist in IS
+  - A criterion about a UI element → the page must exist in IS
+  - A criterion about a data operation → the server action must exist
+  EARS format makes matching mechanical: the WHEN clause names the
+  entity, the SHALL clause names the behavior. No interpretation needed.
+
+**Out-of-scope verification:**
+- Read `## Out of Scope — DO NOT BUILD THESE`. If the IS list shows
+  entities that match excluded items, flag as OVER-BUILD (not missing,
+  but worth noting in the completeness report).
 
 A feature is MISSING if:
-- No deterministic entity supports it
+- No deterministic entity supports its verification anchors
+- Its acceptance criteria reference routes/actions that don't exist in IS
 - It's in IS but marked unreachable / dead by deterministic evidence
-- It's partially implemented (e.g. "user can reset password" is listed but
-  only the request step exists, no confirmation flow)
+- It's partially implemented (e.g. route exists but key acceptance
+  criteria have no supporting server actions)
 
 When `ralph/completeness-evidence.json` reports a failing fitness check,
 you may use that as deterministic evidence of partial implementation.
@@ -98,14 +119,43 @@ For every missing feature, write a full `prd.json` story entry with:
   "category": "<existing category or new one>",
   "description": "<one-line summary>",
   "priority": <integer; use the lowest existing priority + 1 by default>,
-  "behavior": "<prose describing the feature, copied/adapted from the PRD>",
+  "behavior": "<structured behavior with all 7 sections — see prd-to-ralph format>",
+  "page": "<route path or N/A — Backend>",
   "ui_details": "<UI expectations if applicable>",
   "data_model": "<tables/fields touched, if applicable>",
+  "core": false,
   "tests": {
-    "unit": [ "<test case 1>", "<test case 2>" ],
-    "e2e": [ "<e2e scenario 1>" ],
-    "edge_cases": [ "<edge 1>", "<edge 2>" ]
+    "unit": [
+      {
+        "name": "<module.feature.behavior-name>",
+        "description": "<what the test verifies>",
+        "input": "<test input>",
+        "expected_output": "<expected outcome>",
+        "source": "<DEC-NNN if traceable, else 'completeness-auto'>"
+      }
+    ],
+    "e2e": [
+      {
+        "name": "<e2e scenario name>",
+        "steps": ["<step 1>", "<step 2>"],
+        "expected": "<expected outcome>",
+        "source": "<DEC-NNN or completeness-auto>"
+      }
+    ],
+    "edge_cases": [
+      {
+        "name": "<edge case name>",
+        "steps": ["<trigger>"],
+        "expected": "<expected behavior>",
+        "source": "<DEC-NNN or completeness-auto>"
+      }
+    ]
   },
+  "fail_to_pass": [
+    "<module.feature.behavior-name>",
+    "e2e.<e2e-scenario-name>",
+    "edge.<edge-case-name>"
+  ],
   "passes": false,
   "qa_tested": false,
   "completeness_source": "auto-detected by harden-completeness.sh",
@@ -114,9 +164,19 @@ For every missing feature, write a full `prd.json` story entry with:
 ```
 
 **Critical:** the story MUST be complete enough that `build.sh` can build
-it without guessing. Include tests, behavior, and data_model. If any field
-cannot be determined from the PRD, mark the story for human review by
-setting `"blocked_on_spec": true` and describing what's missing.
+it without guessing. Include tests, behavior, data_model, and fail_to_pass.
+
+The `behavior` field MUST contain all 7 structured sections:
+`## Acceptance Criteria (EARS format)`, `## Out of Scope`, `## Escalation
+Conditions`, `## Risk Flags`, `## Verification Anchors`,
+`## Completeness Check`, `## Builder Notes`. Use EARS format (WHEN/SHALL)
+for acceptance criteria.
+
+The `fail_to_pass` field MUST list every test name from the `tests` field,
+following the `{module}.{feature}.{behavior}` naming convention.
+
+If any field cannot be determined from the PRD, mark the story for human
+review by setting `"blocked_on_spec": true` and describing what's missing.
 
 Append the new stories to `ralph/prd.json`. Preserve valid JSON. Do NOT
 modify or reorder existing entries.
