@@ -12,14 +12,18 @@ LLMs build for functionality, not experience. A feature that WORKS but feels wro
 
 ## Prerequisites
 
-Check decision artifacts and continue numbering:
+Check decision artifacts and the atomic counter:
 ```bash
 ls .planning/decision-index.md 2>/dev/null
 ls .planning/CONTEXT.md 2>/dev/null
 ls .planning/grill-log.md 2>/dev/null
+cat .planning/next-dec-id 2>/dev/null
 ```
 
-If a decision index exists, find the highest DEC-NNN number and continue from there.
+**DEC ID allocation:** Read `.planning/next-dec-id` for the next ID to
+assign. After each decision, increment the counter immediately. If the
+file doesn't exist, create it. **Never derive IDs by scanning grill-log
+or decision-index** — parallel sessions would collide.
 
 Read these first (if they exist):
 - `.planning/decision-index.md` — to continue DEC numbering
@@ -87,7 +91,7 @@ If the user pushes back on a question TWICE, stop. Record as DEFERRED with `Reas
 
 ## Depth Calibration
 
-Not every decision needs the full record. Use **note** (1-line) for trivial EASY/LOCAL decisions, **tactical** (compact: Question, Selected, Rationale, Status, Confidence, Reversibility, Scope-Risk) for moderate decisions, **standard** (full record) for important decisions, and **deep** (full record + ADR, Prediction required) for HARD reversibility or SYSTEM scope-risk decisions. When in doubt, go one tier higher.
+Not every decision needs the full record. ALL tiers must persist the minimum fields downstream compilers need: Question, Selected, Rationale, Status, Confidence, Reversibility, Scope-Risk, Consequences (Enables, Constrains). Use **note** (minimum fields only) for trivial EASY/LOCAL decisions, **tactical** (minimum + Rejected) for moderate decisions, **standard** (full record) for important decisions, and **deep** (full record + ADR, Prediction required) for HARD reversibility or SYSTEM scope-risk decisions. When in doubt, go one tier higher.
 
 ## Anti-Sycophancy Rules
 

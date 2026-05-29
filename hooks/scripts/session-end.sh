@@ -34,6 +34,7 @@ PLANNING_DIR="$PROJECT_DIR/.planning"
 if [ -d "$PLANNING_DIR" ]; then
   GRILL_LOG="$PLANNING_DIR/grill-log.md"
   DECISION_INDEX="$PLANNING_DIR/decision-index.md"
+  NEXT_DEC_ID_FILE="$PLANNING_DIR/next-dec-id"
 
   if [ -f "$GRILL_LOG" ]; then
     DECIDED=$(grep -c "Status: DECIDED" "$GRILL_LOG" 2>/dev/null || echo 0)
@@ -48,6 +49,19 @@ if [ -d "$PLANNING_DIR" ]; then
 - Grill log: $GRILL_LOG
 - Total decisions: $TOTAL (DECIDED: $DECIDED, DEFERRED: $DEFERRED, REJECTED: $REJECTED)
 EOF
+
+    # Cross-check: atomic counter vs actual records on disk
+    if [ -f "$NEXT_DEC_ID_FILE" ]; then
+      NEXT_ID=$(cat "$NEXT_DEC_ID_FILE" 2>/dev/null || echo 1)
+      EXPECTED_ON_DISK=$((NEXT_ID - 1))
+      if [ "$TOTAL" -lt "$EXPECTED_ON_DISK" ]; then
+        MISSING=$((EXPECTED_ON_DISK - TOTAL))
+        echo "WARNING: Atomic counter says $EXPECTED_ON_DISK decisions assigned but only $TOTAL found on disk. $MISSING decisions may be UNSAVED (lost to context compaction). Review conversation history." >&2
+        cat >> "$SESSION_FILE" <<EOF
+- ⚠ UNSAVED DECISIONS: counter=$EXPECTED_ON_DISK, on_disk=$TOTAL, missing=$MISSING
+EOF
+      fi
+    fi
 
     # Check if decision index exists and is in sync
     if [ -f "$DECISION_INDEX" ]; then

@@ -12,16 +12,20 @@ Adapted from runesleo's memory-flush principle: "Don't rely on user triggers —
 
 ## Process
 
-### 0. Load Decision Context
+### 0. Load Decision Context and Atomic Counter
 
-Check existing decision artifacts to continue numbering:
+Check existing decision artifacts:
 ```bash
 ls .planning/decision-index.md 2>/dev/null
 ls .planning/CONTEXT.md 2>/dev/null
 ls .planning/grill-log.md 2>/dev/null
+cat .planning/next-dec-id 2>/dev/null
 ```
 
-If a decision index exists, find the highest DEC-NNN number and continue from there.
+**DEC ID allocation:** Read `.planning/next-dec-id` for the next ID to
+assign. After each decision captured, increment the counter immediately.
+If the file doesn't exist, create it. **Never derive IDs by scanning
+grill-log or decision-index** — parallel sessions would collide.
 
 ### 1. Create the Decisions File
 

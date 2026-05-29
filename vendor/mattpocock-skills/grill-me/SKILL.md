@@ -85,12 +85,37 @@ This means your questions become:
 
 If NO code exists, skip this step — the project is greenfield.
 
-### 4. Resume or Start Fresh
+### 4. Reserve DEC IDs via the atomic counter
+
+**All DEC ID allocation goes through `.planning/next-dec-id`.** This file
+contains a single integer — the next ID to assign.
+
+```bash
+# Read or initialize the counter
+if [ -f .planning/next-dec-id ]; then
+  NEXT_ID=$(cat .planning/next-dec-id)
+else
+  mkdir -p .planning
+  echo 1 > .planning/next-dec-id
+  NEXT_ID=1
+fi
+```
+
+When you need a new DEC ID:
+1. Read `.planning/next-dec-id` → that's your ID
+2. Write `ID + 1` back to the file immediately
+3. Use the ID in your record
+
+**Never derive IDs by scanning grill-log.md or decision-index.md.** Those
+are append-only logs — the counter file is the single source of truth.
+This prevents parallel sessions from producing duplicate IDs.
+
+### 5. Resume or Start Fresh
 
 If `.planning/grill-log.md` exists:
 1. Read it completely
 2. Read `.planning/decision-index.md` to see all prior decision IDs
-3. Find the highest DEC number — continue from there
+3. Verify `.planning/next-dec-id` matches (highest DEC + 1). If not, fix it.
 4. Identify which phases are completed
 5. Continue from where the last session left off
 6. Do NOT re-ask resolved questions
@@ -98,7 +123,7 @@ If `.planning/grill-log.md` exists:
 
 If starting fresh:
 1. Create `.planning/` directory if needed
-2. Initialize the grill log, decision index, and CONTEXT.md
+2. Initialize the grill log, decision index, CONTEXT.md, and `next-dec-id`
 
 ## The Decision Record Format
 
@@ -148,28 +173,51 @@ Every decision, no matter how small, gets this structure in the grill log. The r
 - HIGH confidence + EASY reversibility = lowest risk. Move fast.
 - The PRD compiler propagates these fields to stories so downstream builders know where to invest extra testing and where to move quickly.
 
-For `DEFERRED` decisions:
+For `DEFERRED` decisions (same core fields — downstream compilers need them):
 ```markdown
 #### DEC-[NNN]: [Short descriptive title]
 - **Question:** [The exact question asked]
+- **Options Considered:**
+  1. [Option A] — [tradeoff]
+  2. [Option B] — [tradeoff]
+- **Selected:** DEFERRED — no option chosen yet
+- **Rationale:** [Why deferring is the right call now]
 - **Status:** DEFERRED
 - **Reason Deferred:** [Why not now]
 - **Would Revisit When:** [Trigger condition]
 - **Dependencies:** [DEC-NNN] or "None"
 - **Confidence:** [confidence that deferral is the right call]
+- **Reversibility:** [how hard to change IF a default behavior gets baked in while deferred]
 - **Scope-Risk:** [what scope is affected by NOT deciding now]
+- **Counterargument:** [Why should this be decided NOW instead of deferred?]
+- **Consequences:**
+  - Enables: [what deferring frees up — e.g., faster shipping]
+  - Constrains: [what deferring risks — e.g., builder may guess wrong]
+  - Rollback plan: [how to course-correct if default behavior is wrong]
 ```
 
-For `REJECTED` decisions (explicitly NOT doing something):
+For `REJECTED` decisions (explicitly NOT doing something — full fields so
+downstream agents know the risk profile of what was rejected):
 ```markdown
 #### DEC-[NNN]: [Short descriptive title]
 - **Question:** [What was considered]
+- **Options Considered:**
+  1. [The rejected option] — [tradeoff]
+  2. [Why not doing it] — [tradeoff]
+- **Selected:** REJECTED — explicitly not doing this
+- **Rationale:** [Why rejecting]
 - **Status:** REJECTED
 - **Reason Rejected:** [Why explicitly not]
+- **Dependencies:** [DEC-NNN] or "None"
+- **Confidence:** [confidence that rejection is correct]
+- **Reversibility:** [how hard to ADD this later if rejection turns out wrong]
+- **Scope-Risk:** [scope affected by NOT having this capability]
+- **Counterargument:** [Strongest argument FOR doing this. What would change your mind?]
 - **Implication:** [What this means for the build]
 - **Consequences:**
   - Enables: [what rejecting this frees up]
   - Constrains: [what rejecting this rules out]
+  - Rollback plan: [how to add this later if needed]
 ```
 
 ## The CONTEXT.md — Live Glossary
@@ -538,13 +586,21 @@ Last updated: [timestamp]
 
 **NEVER rely on conversation context for decisions. ALWAYS write to disk.**
 
-After EVERY 3-5 resolved questions:
-1. Append the new DEC records to `.planning/grill-log.md`
-2. Update `.planning/decision-index.md` with the new rows
-3. Update `.planning/CONTEXT.md` if any terms were defined or clarified
-4. Create ADRs if any decision meets all three ADR criteria
+After EVERY resolved decision:
+1. Append the new DEC record to `.planning/grill-log.md`
+2. Update `.planning/decision-index.md` with the new row
+3. Increment `.planning/next-dec-id`
+4. Update `.planning/CONTEXT.md` if any terms were defined or clarified
+5. Create ADRs if the decision meets all three ADR criteria
 
-If you've resolved 3-5 questions and haven't saved, STOP ASKING and SAVE. The user's richest thinking happens in dialogue. If the context window compacts, that thinking is gone forever. The files on disk survive compaction, session restarts, and tool switches.
+**Save IMMEDIATELY after each decision — not in batches.** The user's
+richest thinking happens in dialogue. If the context window compacts
+before you save, that thinking is gone forever. A single unsaved
+decision is one too many.
+
+You may batch the display (ask 2-3 questions, then save all resolved
+records at once) but never let more than 3 unsaved decisions accumulate.
+If you've resolved 3 questions and haven't saved, STOP ASKING and SAVE.
 
 **This is the single most important rule in this skill.**
 
@@ -625,12 +681,19 @@ This is an interrogation, not a therapy session. Respect the user by challenging
 
 ## Depth Calibration — Not Every Decision Needs Full Ceremony
 
-Not every decision warrants the full 13+ field record. Match the depth to the decision's weight. Use these tiers:
+Not every decision warrants the full 13+ field record. Match the depth to
+the decision's weight. But ALL tiers MUST persist the minimum fields that
+downstream compilers (write-a-prd, prd-to-ralph) require.
+
+**Minimum persisted fields (ALL tiers):** Question, Selected, Rationale,
+Status, Confidence, Reversibility, Scope-Risk, Consequences (Enables,
+Constrains). These fields are NON-NEGOTIABLE — without them, prd-to-ralph
+cannot classify risk and may fill in permissive defaults.
 
 | Tier | When | Record Format |
 |------|------|---------------|
-| **note** | Trivial, EASY reversibility, LOCAL scope. "What color for the error toast?" | 1-line in grill log: `DEC-NNN: [title] — [selected]. (EASY/LOCAL)` |
-| **tactical** | Moderate, EASY/MODERATE reversibility, LOCAL/MODULE scope. "Should we paginate or infinite-scroll?" | Compact: Question, Selected, Rationale, Status, Confidence, Reversibility, Scope-Risk. Skip Counterargument, Prediction, Observation Indicators. |
+| **note** | Trivial, EASY reversibility, LOCAL scope. "What color for the error toast?" | Minimum fields only. Display can be compact but ALL minimum fields must be on disk. |
+| **tactical** | Moderate, EASY/MODERATE reversibility, LOCAL/MODULE scope. "Should we paginate or infinite-scroll?" | Minimum fields + Rejected alternatives. Skip Counterargument, Prediction, Observation Indicators. |
 | **standard** | Important, any reversibility, any scope. Most decisions land here. | Full DEC record with all fields. |
 | **deep** | HARD reversibility, or SYSTEM scope-risk, or LOW confidence. "What database engine?" | Full DEC record + ADR. Prediction field REQUIRED. Counterargument REQUIRED and must be substantial. |
 
@@ -666,7 +729,7 @@ This applies to ALL interrogation-style commands: grill-me, office-hours, data-g
 
 - **Never make decisions for the user.** Present options with recommendations. Record what they chose.
 - **Never paraphrase decisions.** Record the user's actual words in the rationale.
-- **Never batch decisions at end of session.** Write incrementally, every 3-5 decisions.
+- **Never batch decisions at end of session.** Write after every decision, or at most every 3.
 - **Never skip the decision ID.** Every resolved question gets a DEC-NNN, no exceptions.
 - **Never leave a vague term undefined.** If a term appears without a CONTEXT.md entry, challenge it.
 - **Never chase topics outside the domain scope.** Park them in the Parking Lot.
