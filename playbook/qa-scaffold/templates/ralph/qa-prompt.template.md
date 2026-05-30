@@ -83,25 +83,29 @@ If ANY of these fail:
 - Re-run the checks until green.
 - Record the bug + fix in `qa-report.json`.
 
-**3b. FAIL_TO_PASS oracle verification:**
-Read the story's `fail_to_pass` field. This lists the EXACT test names
-the builder was required to create. Verify each one exists in the test
-suite output:
+**3b. fail_to_pass verification (structured, not grep):**
 
-```bash
-# Run tests with verbose output and check for each pinned name
-npm run test:run -- --reporter=verbose 2>&1 | grep -c "test-name-here"
-```
+1. Run the test suite with a JSON reporter:
+   `npm run test:run -- --reporter=json 2>test-results.json`
+   (Fall back to `--reporter=verbose` only if JSON is unavailable)
 
-For each `fail_to_pass` entry:
-- If the test name exists and passes → oracle satisfied
-- If the test name is missing → severity=high bug: "builder did not
-  create required test {name}"
-- If the test name exists but fails → severity=high bug: "pinned test
-  {name} is failing"
+2. For each pinned test name in `fail_to_pass`:
+   a. Find the test in the JSON output by exact name match
+   b. Verify `status === "passed"` (not "skipped", "pending", or "failed")
+   c. Verify the test contains at least one assertion (`assertionCount > 0`
+      or `numPassingAsserts > 0`)
+   d. Record in the report: test_name, status, assertion_count, duration_ms
 
-Record oracle results in `qa-report.json` under a new
-`fail_to_pass_checks` field.
+3. A pinned test is UNSATISFIED if:
+   - It does not exist in the output (missing)
+   - Its status is not "passed" (failed/skipped/pending)
+   - It has zero assertions (trivial/stub test)
+
+4. **qa_tested:true is BLOCKED** if ANY pinned test is unsatisfied.
+
+Do NOT use grep against text output as the primary verification method.
+Grep cannot distinguish a passing test from a failing test that prints
+the same name.
 
 ### 4. Independent behavioral verification
 Go beyond the automated checks. Verify against EACH structured section
@@ -115,10 +119,46 @@ For each criterion in `## Acceptance Criteria`, verify it independently:
   measure it.
 - Check: does the implementation satisfy the criterion as written?
 
+**Evidence requirement for each EARS criterion:**
+
+For every acceptance criterion, the QA report entry MUST include:
+
+| Field | Content |
+|-------|---------|
+| `criterion` | The full EARS text |
+| `trigger` | Parsed WHEN/IF/WHILE clause |
+| `expected` | Parsed SHALL clause |
+| `verification_method` | How verified: "unit_test", "e2e_test", "manual_browser", "api_call" |
+| `command_or_action` | Exact command, URL, or browser action performed |
+| `observed_result` | What actually happened (output snippet, status code, UI state) |
+| `result` | "pass" or "fail" |
+| `evidence_path` | Path to screenshot, test output file, or "inline" if observed_result is sufficient |
+
+**qa_tested:true is BLOCKED** unless every acceptance criterion has all
+evidence fields populated AND result=pass. A criterion with result=pass
+but empty observed_result or command_or_action is invalid.
+
 **4b. Out-of-Scope verification:**
 For each item in `## Out of Scope — DO NOT BUILD THESE`:
 - Verify the builder did NOT implement it.
 - If it was built anyway, record as severity=medium "over-build" issue.
+
+**Out-of-scope violations are SHIP-BLOCKING:**
+
+If the `## Out of Scope — DO NOT BUILD THESE` section lists excluded
+behaviors, and the implementation contains ANY of them:
+
+1. Record each violation in `out_of_scope_checks.violations`
+2. Set `status: "fail"` — not "pass_with_bugs" or "conditional"
+3. **qa_tested:true is BLOCKED** until all out-of-scope violations are
+   removed from the implementation
+
+Out-of-scope items are prohibitions, not warnings. The builder must
+remove the forbidden behavior. QA must not accept it as a known bug.
+
+The QA agent must NOT remove the over-built code itself — record the
+violation, set status=fail, and let the builder fix it in the next
+build iteration.
 
 **4c. Verification Anchor check:**
 For each anchor in `## Verification Anchors`:
@@ -140,53 +180,86 @@ If `## Risk Flags` shows LOW confidence or HARD reversibility:
 - Test the specific concern named in the ⚠ warning.
 - Verify the rollback plan described in the risk flags is feasible.
 
+**4f. Escalation condition verification:**
+
+Read `## Escalation Conditions — STOP AND ABORT IF`. For each condition:
+1. Determine if the condition is testable from the built code
+2. If testable: verify the implementation would abort/escalate when the
+   condition triggers. Record in `escalation_checks`:
+   `{ condition, testable: true, verified: true/false, method }`
+3. If not testable from code alone: record as
+   `{ condition, testable: false, reason }` — this is not a failure,
+   but it must be logged
+4. If the builder SHOULD have hit an escalation condition but didn't
+   abort: this is a HIGH severity bug
+
+**4g. Risk flag verification:**
+
+Read `## Risk Flags`. If any decision has LOW confidence or HARD
+reversibility:
+1. Verify the implementation uses reversible patterns (feature flags,
+   abstraction layers, migration rollback) where the risk flag suggests
+2. Record in `risk_flag_checks`:
+   `{ flag, mitigation_found: true/false, details }`
+
+**4h. Builder notes verification:**
+
+Read `## Builder Notes`. For each note:
+1. Check whether the implementation follows the stated constraint
+2. Record in `builder_note_checks`:
+   `{ note, followed: true/false, details }`
+3. A violated builder note is a MEDIUM severity bug
+
 ### 5. Record findings
+**QA report entry schema (MUST match exactly):**
+
 For this feature, append to `ralph/qa-report.json`:
 ```json
 {
-  "story_id": "<id>",
+  "story_id": "<story ID from prd.json>",
   "qa_tested_at": "<ISO timestamp>",
   "qa_tested_by": "codex",
+  "status": "pass | fail | conditional",
   "automated_checks": { "passed": true, "failures": [] },
   "acceptance_criteria_checks": {
-    "total": 3,
-    "passed": 3,
+    "total": 0,
+    "passed": 0,
     "failed": 0,
-    "details": [
-      { "criterion": "<text>", "dec": "DEC-NNN", "result": "pass|fail" }
-    ]
-  },
-  "out_of_scope_checks": {
-    "total": 2,
-    "violations": 0,
-    "details": [
-      { "item": "<excluded thing>", "result": "not-built|over-built" }
-    ]
-  },
-  "verification_anchor_checks": {
-    "route": "pass|fail|N/A",
-    "action": "pass|fail|N/A",
-    "ui": "pass|fail|N/A"
+    "details": []
   },
   "fail_to_pass_checks": {
-    "total": 3,
-    "found": 3,
-    "passing": 3,
-    "missing": [],
-    "failing": []
+    "total": 0,
+    "satisfied": 0,
+    "unsatisfied": 0,
+    "details": []
+  },
+  "out_of_scope_checks": {
+    "violations": [],
+    "clean": true
+  },
+  "escalation_checks": [],
+  "risk_flag_checks": [],
+  "builder_note_checks": [],
+  "verification_anchor_checks": {
+    "route_exists": true,
+    "action_exists": true,
+    "ui_exists": true
   },
   "risk_level": "high|medium|low",
-  "bugs_found": [
+  "bugs": [
     {
       "severity": "high|medium|low",
       "description": "<what was broken>",
       "fix": "<what was changed>",
       "commit": "<sha>"
     }
-  ],
-  "verdict": "pass|fail|fixed"
+  ]
 }
 ```
+
+**Field naming is contractual.** Use `status` not `verdict`. Use `bugs`
+not `bugs_found`. The qa.sh runner and qa-run release gates parse these
+exact field names.
 
 ### 6. Commit bugfixes with QA: prefix
 If you fixed any bugs, commit with:
