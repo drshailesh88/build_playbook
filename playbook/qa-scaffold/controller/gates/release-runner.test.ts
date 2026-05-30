@@ -235,7 +235,7 @@ function failed(v?: "pass" | "fail"): boolean {
 }
 
 describe("runReleaseGates", () => {
-  test("GREEN verdict when all gates pass", async () => {
+  test("WARN verdict when required gates pass but secondary gates are skipped", async () => {
     // Seed a build dir so bundle-size has something to report.
     await fs.mkdir(join(root, ".next", "static", "chunks"), { recursive: true });
     await fs.writeFile(join(root, ".next", "static", "chunks", "main.js"), Buffer.alloc(1000));
@@ -245,10 +245,27 @@ describe("runReleaseGates", () => {
       config: cfg(releaseScenarioRunner({ stryker: "pass", vitest: "pass" })),
       axe: { routes: ["/"] },
       visual: { routes: ["/"] },
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
+      skipGates: ["api-contract-validation", "specmatic-contract"],
+    });
+    expect(result.verdict).toBe("WARN");
+    expect(result.verdictReason).toContain("secondary gate(s) skipped");
+    expect(result.failedGates).toEqual([]);
+  });
+
+  test("GREEN verdict when all required gates pass and no gates are skipped", async () => {
+    await fs.mkdir(join(root, ".next", "static", "chunks"), { recursive: true });
+    await fs.writeFile(join(root, ".next", "static", "chunks", "main.js"), Buffer.alloc(1000));
+    await fs.writeFile(join(root, ".quality", "policies", "lock-manifest.json"), JSON.stringify({ schema_version: 1, files: {} }));
+
+    const result = await runReleaseGates({
+      config: cfg(releaseScenarioRunner({ stryker: "pass", vitest: "pass" })),
+      axe: { routes: ["/"] },
+      visual: { routes: ["/"] },
+      specmatic: { generateOpenApiIfMissing: true },
     });
     expect(result.verdict).toBe("GREEN");
     expect(result.failedGates).toEqual([]);
+    expect(result.skippedGates).toEqual([]);
   });
 
   test("RED verdict when primary gate fails", async () => {
@@ -258,7 +275,9 @@ describe("runReleaseGates", () => {
 
     const result = await runReleaseGates({
       config: cfg(releaseScenarioRunner({ vitest: "fail" })),
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
+      axe: { routes: ["/"] },
+      visual: { routes: ["/"] },
+      skipGates: ["api-contract-validation", "specmatic-contract"],
     });
     expect(result.verdict).toBe("RED");
     expect(result.verdictReason).toContain("vitest-all");
@@ -273,7 +292,9 @@ describe("runReleaseGates", () => {
 
     const result = await runReleaseGates({
       config: cfg(releaseScenarioRunner()),
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
+      axe: { routes: ["/"] },
+      visual: { routes: ["/"] },
+      skipGates: ["api-contract-validation", "specmatic-contract"],
     });
     expect(result.verdict).toBe("RED");
     expect(result.verdictReason).toContain("completeness-fitness");
@@ -287,7 +308,9 @@ describe("runReleaseGates", () => {
     const result = await runReleaseGates({
       config: cfg(releaseScenarioRunner()),
       bundleSize: { buildDir: ".next/static", totalMaxBytes: 100 },
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
+      axe: { routes: ["/"] },
+      visual: { routes: ["/"] },
+      skipGates: ["api-contract-validation", "specmatic-contract"],
     });
     // bundle-size fails but it's a secondary (warn) gate
     expect(result.warnGates).toContain("bundle-size");
@@ -307,7 +330,9 @@ describe("runReleaseGates", () => {
 
     const result = await runReleaseGates({
       config: cfg(releaseScenarioRunner()),
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
+      axe: { routes: ["/"] },
+      visual: { routes: ["/"] },
+      skipGates: ["api-contract-validation", "specmatic-contract"],
     });
     expect(result.verdict).toBe("HARD");
     expect(result.verdictReason).toContain("contract-hash-verify");
@@ -336,7 +361,24 @@ describe("runReleaseGates", () => {
     });
     // Only contract-hash ran.
     expect(result.gateResults.map((g) => g.gateId)).toEqual(["contract-hash-verify"]);
-    expect(result.verdict).toBe("GREEN");
+    expect(result.skippedGates).toEqual([
+      "stryker-full",
+      "vitest-all",
+      "playwright-full",
+      "axe-accessibility",
+      "visual-regression",
+      "completeness-fitness",
+      "api-contract-validation",
+      "specmatic-contract",
+      "migration-safety",
+      "bundle-size",
+      "lighthouse-ci",
+      "npm-audit",
+      "license-compliance",
+      "dependency-freshness",
+    ]);
+    expect(result.verdict).toBe("RED");
+    expect(result.verdictReason).toMatch(/INVALID|skipped/);
   });
 
   test("parallelization: gates in Group 2 run concurrently", async () => {
@@ -356,9 +398,11 @@ describe("runReleaseGates", () => {
 
     const result = await runReleaseGates({
       config: cfg(slowRunner),
-      skipGates: ["axe-accessibility", "visual-regression", "api-contract-validation", "specmatic-contract"],
+      axe: { routes: ["/"] },
+      visual: { routes: ["/"] },
+      skipGates: ["api-contract-validation", "specmatic-contract"],
     });
-    expect(result.verdict).toBe("GREEN");
+    expect(result.verdict).toBe("WARN");
 
     // Group 2 vitest + playwright + npm-audit should overlap (parallel).
     const vitestStart = startTimes["npx:vitest"];

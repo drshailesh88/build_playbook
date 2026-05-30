@@ -31,12 +31,16 @@ Attached in-context:
 ### 2. Pick the next story
 1. Read `ralph/prd.json`. Find the FIRST entry where `"passes": false`.
    Stories are priority-ordered; do not skip or reorder.
-2. **Check for `blocked_on_spec`.** If the entry has `"blocked_on_spec": true`,
-   it was auto-detected by the completeness auditor but lacks sufficient
-   spec detail for safe implementation. Do NOT build it. Skip to the next
-   `passes:false` entry. If ALL remaining entries are `blocked_on_spec`,
-   emit `<promise>ABORT</promise>` with a diagnostic listing each blocked
-   story and what spec detail is missing.
+2. **Check for blocked entries.** If the entry has `"blocked_on_spec": true`
+   or `"blocked_on_contract": true`, it cannot be built yet. Skip to the next
+   `passes:false` entry.
+   - `blocked_on_spec`: auto-detected by completeness auditor but lacks
+     sufficient spec detail. Needs human spec refinement.
+   - `blocked_on_contract`: high-risk category (auth/payments/user_data)
+     that requires a frozen contract before building. Run
+     `/playbook:contract-pack <story-id>` first.
+   If ALL remaining entries are blocked, emit `<promise>ABORT</promise>`
+   with a diagnostic listing each blocked story and the required action.
 3. If the entry has a `branchName` field, check out that branch first.
    Otherwise stay on the current branch (usually `main`).
 4. Read the entry's `behavior`, `data_model`, `tests`, `page`, `ui_details`.

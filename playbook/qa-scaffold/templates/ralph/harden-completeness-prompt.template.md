@@ -189,9 +189,23 @@ For every missing feature, write a full `prd.json` story entry with:
   "passes": false,
   "qa_tested": false,
   "completeness_source": "auto-detected by harden-completeness.sh",
-  "completeness_discovered_at": "<ISO timestamp>"
+  "completeness_discovered_at": "<ISO timestamp>",
+  "risk_domain": "<auth | payments | user_data | migrations | null>",
+  "external_prerequisites": "<any external deps, or 'None'>",
+  "tier": "<note | tactical | standard | deep>"
 }
 ```
+
+Derive the new required fields mechanically:
+- `risk_domain`: use `auth` if the story touches authentication, login,
+  sessions, or tokens; `payments` if it touches payments, billing,
+  subscriptions, or pricing; `user_data` if it touches PII, user profiles,
+  account deletion, or data export; `migrations` if it touches data
+  migrations or destructive operations; otherwise `null`.
+- `external_prerequisites`: list any external services/APIs the feature
+  depends on, or `None`.
+- `tier`: default to `standard` for completeness-discovered features. They
+  are real gaps, not notes.
 
 **Critical:** the story MUST be complete enough that `build.sh` can build
 it without guessing. Include tests, behavior, data_model, and fail_to_pass.
@@ -267,6 +281,15 @@ def validate_completeness_entry(entry):
         if name not in all_test_names:
             errors.append(f"fail_to_pass '{name}' has no corresponding test")
 
+    # 6. Required prd.json metadata
+    allowed_risk_domains = {'auth', 'payments', 'user_data', 'migrations', None}
+    if entry.get('risk_domain') not in allowed_risk_domains:
+        errors.append("risk_domain must be one of: auth, payments, user_data, migrations, null")
+    if 'external_prerequisites' not in entry:
+        errors.append("external_prerequisites is required")
+    if entry.get('tier') not in {'note', 'tactical', 'standard', 'deep'}:
+        errors.append("tier must be one of: note, tactical, standard, deep")
+
     return errors
 ```
 
@@ -285,29 +308,30 @@ so the human can see it — but the builder will SKIP entries with
 the ambiguity, removes `blocked_on_spec`, and re-runs grilling or
 updates the PRD.
 
-**Critical for high-risk categories:** If a `blocked_on_spec` entry has
-category `auth`, `payments`, or `user_data`, also set
+**Critical for high-risk domains:** If a `blocked_on_spec` entry has
+`risk_domain` `auth`, `payments`, or `user_data`, also set
 `"blocked_severity": "critical"` — these MUST NOT be built from
 ambiguous specs under any circumstances.
 
 ### 5c. Flag contract requirements
 
 For each appended story, determine whether it needs a frozen contract
-for the release gates (`/playbook:qa-run`):
+for the release gates (`/playbook:qa-run`). Use `risk_domain` as the
+primary classifier; use `category` only for the WARN fallbacks:
 
-| Category | Contract Gate | Action |
-|----------|--------------|--------|
-| `auth`, `payments`, `user_data` | HARD — qa-run blocks without contract | `contract_needed: true, contract_category_gate: "hard"` |
-| `business_logic`, `ui` | WARN — qa-run warns without contract | `contract_needed: true, contract_category_gate: "warn"` |
+| Classifier | Contract Gate | Action |
+|------------|--------------|--------|
+| `risk_domain` is `auth`, `payments`, or `user_data` | HARD — qa-run blocks without contract | `contract_needed: true, contract_category_gate: "hard"` |
+| `category` is `business_logic` or `ui` | WARN — qa-run warns without contract | `contract_needed: true, contract_category_gate: "warn"` |
 | Any with HARD reversibility or SYSTEM scope-risk | WARN | `contract_needed: true, contract_category_gate: "warn"` |
-| `data`, `settings`, `interaction` (LOW risk) | None | `contract_needed: false` |
+| `risk_domain` is `migrations` or `null`, and LOW risk | None | `contract_needed: false` |
 
 Add these fields to each appended entry:
 
 ```json
 "contract_needed": true,
 "contract_category_gate": "hard",
-"contract_note": "Category auth — qa-run requires frozen contract. Run: /playbook:contract-pack <story-id>"
+"contract_note": "risk_domain auth — qa-run requires frozen contract. Run: /playbook:contract-pack <story-id>"
 ```
 
 This ensures the human knows to run `/playbook:contract-pack` for

@@ -110,6 +110,7 @@ export interface ReleaseRunnerInput {
 
 export interface ReleaseResult {
   gateResults: GateResult[];
+  skippedGates?: string[];
   verdict: ReleaseVerdict;
   verdictReason: string;
   failedGates: string[];
@@ -144,6 +145,11 @@ const SECONDARY_GATES: readonly string[] = [
   DEPENDENCY_FRESHNESS_GATE_ID,
 ];
 const INTEGRITY_GATES: readonly string[] = [CONTRACT_HASH_GATE_ID];
+const ALL_RELEASE_GATES: readonly string[] = [
+  ...PRIMARY_GATES,
+  ...SECONDARY_GATES,
+  ...INTEGRITY_GATES,
+];
 
 export async function runReleaseGates(
   input: ReleaseRunnerInput,
@@ -289,7 +295,8 @@ export async function runReleaseGates(
   }
 
   // ── Verdict
-  const verdict = computeVerdict(gateResults);
+  const skippedGates = ALL_RELEASE_GATES.filter((id) => skip.has(id));
+  const verdict = computeVerdict(gateResults, skippedGates);
   const failedGates = gateResults
     .filter((g) => g.status === "fail" || g.status === "error")
     .map((g) => g.gateId);
@@ -304,6 +311,7 @@ export async function runReleaseGates(
   const endedAt = new Date().toISOString();
   return {
     gateResults,
+    skippedGates,
     verdict: verdict.verdict,
     verdictReason: verdict.reason,
     failedGates,
@@ -316,9 +324,21 @@ export async function runReleaseGates(
 
 function computeVerdict(
   gateResults: GateResult[],
+  skippedGates: readonly string[],
 ): { verdict: ReleaseVerdict; reason: string } {
   // HARD beats RED beats WARN beats GREEN.
   const byId = new Map(gateResults.map((g) => [g.gateId, g]));
+  const skipped = new Set(skippedGates);
+
+  const skippedRequired = [...PRIMARY_GATES, ...INTEGRITY_GATES].filter((id) =>
+    skipped.has(id),
+  );
+  if (skippedRequired.length > 0) {
+    return {
+      verdict: "RED",
+      reason: `INVALID — required gates skipped: ${skippedRequired.join(", ")}`,
+    };
+  }
 
   for (const id of INTEGRITY_GATES) {
     const g = byId.get(id);
@@ -345,10 +365,18 @@ function computeVerdict(
     const g = byId.get(id);
     return g && (g.status === "fail" || g.status === "error");
   });
-  if (secondaryFailures.length > 0) {
+  const skippedSecondary = SECONDARY_GATES.filter((id) => skipped.has(id));
+  if (secondaryFailures.length > 0 || skippedSecondary.length > 0) {
+    const reasons: string[] = [];
+    if (secondaryFailures.length > 0) {
+      reasons.push(`secondary gate(s) failed: ${secondaryFailures.join(", ")}`);
+    }
+    if (skippedSecondary.length > 0) {
+      reasons.push(`secondary gate(s) skipped: ${skippedSecondary.join(", ")}`);
+    }
     return {
       verdict: "WARN",
-      reason: `secondary gate(s) failed: ${secondaryFailures.join(", ")}`,
+      reason: reasons.join("; "),
     };
   }
 
