@@ -56,6 +56,36 @@ You MUST NOT invoke `feature-census` here.
 You MUST NOT search the codebase to rediscover what exists.
 You MUST treat the extractor output as truth for IS.
 
+**Extractor confidence check (before computing OUGHT − IS):**
+
+Before trusting the IS list, perform a bounded sanity check:
+
+1. Count entities in `completeness-is-list.json`: if total entities
+   (apiEndpoints + serverActions + uiPages + routeHandlers) is ZERO
+   and prd.json has ≥3 stories with `passes:true`, the extractor
+   likely failed. **ABORT** with diagnostic: "IS extractor returned
+   zero entities despite N built stories."
+
+2. Read `completeness-evidence.json`. If it reports `warnings` or
+   `discoveredRoots` that suggest extraction was partial (e.g.,
+   "skipped directory X", "no package.json found"), log these in
+   completeness-progress.txt and add a confidence qualifier to the
+   iteration summary.
+
+3. If a feature in OUGHT has `passes:true` in prd.json (meaning the
+   builder already built and marked it) but NO matching entity exists
+   in IS, this is an EXTRACTOR GAP, not a missing feature. Do NOT
+   append a new story. Instead, log:
+   ```
+   EXTRACTOR GAP: {story-id} has passes:true but no IS entity found.
+   The extractor may need updating, or the feature uses a pattern the
+   extractor doesn't recognize.
+   ```
+   Flag these in the progress log for human review.
+
+You still MUST NOT search the codebase yourself. But you MUST NOT
+blindly append stories for features that prd.json says are already built.
+
 ### 3. Extract the OUGHT list (what the PRD promises)
 
 Read `ralph/prd.json`. Each entry is a promised feature. Extract `id`,
@@ -183,38 +213,69 @@ modify or reorder existing entries.
 
 ### 5b. Validate appended entry (checkpoint gate)
 
-After writing each new story entry, validate it BEFORE appending to
-prd.json. Apply the same validation that prd-to-ralph Step 4j uses:
+**Checkpoint validation is MANDATORY, not advisory.**
 
-For each entry:
-1. `behavior` field contains all 7 required sections:
-   - `## Acceptance Criteria`
-   - `## Out of Scope`
-   - `## Escalation Conditions`
-   - `## Risk Flags`
-   - `## Verification Anchors`
-   - `## Completeness Check`
-   - `## Builder Notes`
+After constructing each entry and BEFORE appending to prd.json, validate
+using these exact checks (pseudo-code):
 
-2. At least one acceptance criterion uses EARS format (contains
-   `SHALL` keyword)
+```python
+def validate_completeness_entry(entry):
+    errors = []
 
-3. `fail_to_pass` is non-empty and every entry follows the
-   `{module}.{feature}.{behavior}` naming convention (dot-separated,
-   final segment in kebab-case)
+    # 1. Behavior sections
+    behavior = entry.get('behavior', '')
+    required_sections = [
+        '## Acceptance Criteria', '## Out of Scope',
+        '## Escalation Conditions', '## Risk Flags',
+        '## Verification Anchors', '## Completeness Check',
+        '## Builder Notes'
+    ]
+    for section in required_sections:
+        if section not in behavior:
+            errors.append(f"Missing behavior section: {section}")
 
-4. Every test in `tests.unit`, `tests.e2e`, and `tests.edge_cases`
-   is a structured object with `name`, `description`, and `source`
-   fields (not bare strings)
+    # 2. EARS format
+    if 'SHALL' not in behavior:
+        errors.append("No EARS criteria found (missing SHALL keyword)")
 
-5. `fail_to_pass` entries correspond to test names:
-   - Each unit test `name` appears in `fail_to_pass`
-   - Each e2e test `name` appears prefixed with `e2e.`
-   - Each edge case `name` appears prefixed with `edge.`
+    # 3. fail_to_pass
+    ftp = entry.get('fail_to_pass', [])
+    if not isinstance(ftp, list) or len(ftp) == 0:
+        errors.append("fail_to_pass must be a non-empty array")
+    for name in ftp:
+        if name.count('.') < 2:
+            errors.append(f"fail_to_pass '{name}' not in module.feature.behavior format")
 
-If any entry fails validation, fix it before appending. Do not append
-invalid entries to prd.json. Log validation failures in
-completeness-progress.txt.
+    # 4. Structured tests
+    for test_type in ['unit', 'e2e', 'edge_cases']:
+        tests = entry.get('tests', {}).get(test_type, [])
+        for t in tests:
+            if not isinstance(t, dict):
+                errors.append(f"tests.{test_type} contains non-object")
+            elif not all(k in t for k in ['name', 'description', 'source']):
+                errors.append(f"tests.{test_type} entry missing required fields")
+
+    # 5. fail_to_pass ↔ tests correspondence
+    all_test_names = set()
+    for t in entry.get('tests', {}).get('unit', []):
+        all_test_names.add(t.get('name', ''))
+    for t in entry.get('tests', {}).get('e2e', []):
+        all_test_names.add('e2e.' + t.get('name', ''))
+    for t in entry.get('tests', {}).get('edge_cases', []):
+        all_test_names.add('edge.' + t.get('name', ''))
+    for name in ftp:
+        if name not in all_test_names:
+            errors.append(f"fail_to_pass '{name}' has no corresponding test")
+
+    return errors
+```
+
+If `validate_completeness_entry` returns errors:
+- For `blocked_on_spec: true` entries: log errors, append anyway (human will fix)
+- For all other entries: fix errors BEFORE appending. Do NOT append
+  invalid non-blocked entries.
+
+Log all validation results in completeness-progress.txt.
 
 If you cannot write a valid entry (e.g., the PRD source is too ambiguous
 for proper EARS criteria), set `"blocked_on_spec": true` and describe
@@ -254,6 +315,18 @@ these features BEFORE running `/playbook:qa-run`. Without this flag,
 completeness-discovered auth/payments/user_data features create a time
 bomb: build.sh builds them, qa.sh QA's them, then qa-run hard-errors
 at the release gate because there's no frozen contract.
+
+**HARD-gate stories are NOT buildable until contracts exist.**
+
+For any appended story with `contract_category_gate: "hard"`:
+- Set `"blocked_on_contract": true` in addition to existing fields
+- The builder (build-prompt) will skip entries with
+  `blocked_on_contract: true`, same as `blocked_on_spec`
+
+This prevents building auth/payments/user_data features before a
+frozen oracle exists. The human must run
+`/playbook:contract-pack <story-id>` first, which removes
+`blocked_on_contract` after the contract is frozen.
 
 ### 6. Commit with COMPLETENESS: prefix
 
@@ -301,9 +374,21 @@ future projects benefit.
 ### 8. Signal the outcome
 
 At the end of your response, emit exactly one of:
-- `<promise>NEXT</promise>` — appended ≥1 feature; orchestrator will trigger build.sh
+- `<promise>NEXT</promise>` — appended ≥1 buildable feature (not
+  blocked_on_spec or blocked_on_contract); orchestrator will trigger
+  build.sh
 - `<promise>COMPLETENESS_COMPLETE</promise>` — OUGHT ⊆ IS; nothing missing
 - `<promise>ABORT</promise>` — blocked (explain above the tag)
+
+If ALL appended features in this iteration are blocked (every one has
+either `blocked_on_spec: true` or `blocked_on_contract: true`), still
+emit `<promise>NEXT</promise>` BUT add a prominent note to
+`completeness-progress.txt` under a `### Human Action Required` heading
+explaining that the next build iteration will have nothing buildable to
+pick up until the human resolves blocks (re-grill spec-blocked stories
+or run `/playbook:contract-pack <story-id>` for contract-blocked ones).
+The orchestrator will see no buildable work was added and surface this
+to the operator.
 
 The orchestrator verifies `<promise>COMPLETENESS_COMPLETE</promise>` by
 checking whether anything was appended this iteration. A false signal will

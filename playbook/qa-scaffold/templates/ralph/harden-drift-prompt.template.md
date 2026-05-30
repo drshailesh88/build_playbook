@@ -130,6 +130,37 @@ timezone handling after migration to UTC"), add it to `## Drift Patterns`.
 
 ### 9. Signal the outcome
 
+**Contract coverage audit (required before DRIFT_COMPLETE):**
+
+Before declaring no drift, verify that every contract artifact has
+corresponding test coverage:
+
+1. Read `.quality/contracts/{feature}/invariants.md`. For each invariant:
+   - Find a corresponding test in `acceptance.spec.ts` or
+     `regressions.spec.ts` that exercises this invariant
+   - If no test covers it: this is a **COVERAGE GAP**, not "no drift"
+   - Record: `{ invariant, covered: true/false, test_name_or_gap }`
+
+2. Read `.quality/contracts/{feature}/counterexamples.md`. For each
+   counterexample (forbidden behavior):
+   - Find a corresponding test that asserts this behavior does NOT occur
+   - If no test covers it: COVERAGE GAP
+   - Record: `{ counterexample, covered: true/false, test_name_or_gap }`
+
+3. Read `.quality/contracts/{feature}/examples.md`. For each example
+   (required behavior):
+   - Find a corresponding test that asserts this behavior occurs
+   - If no test covers it: COVERAGE GAP
+
+**DRIFT_COMPLETE is BLOCKED** if any invariant or counterexample has
+`covered: false`. Instead, emit NEXT with a diagnostic:
+"Contract coverage gaps found — [N] invariants and [M] counterexamples
+lack test coverage. Adding tests to close gaps."
+
+The drift agent SHOULD write tests to close coverage gaps (within its
+permissions — it may read contract prose and write regression tests).
+If it cannot (locked files), ABORT with the gap report.
+
 - `<promise>NEXT</promise>` — this contract fixed or progress made; more may remain
 - `<promise>DRIFT_COMPLETE</promise>` — all contract acceptance tests pass
 - `<promise>ABORT</promise>` — blocked (explain)

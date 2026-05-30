@@ -88,6 +88,27 @@ mutants too and are harder to game than a single example.
 <!-- CUSTOMIZE: if your project uses fast-check, note the naming convention
 (e.g. `*.property.test.ts`) and the run command here. -->
 
+**Behavioral grounding requirement:**
+
+Every test added to kill a surviving mutant MUST cite one of:
+- A PRD story acceptance criterion (by DEC-NNN or story ID)
+- A contract invariant (by contract feature name + invariant text)
+- An externally observable behavior (by route, action, or UI element)
+
+If a surviving mutant cannot be killed by a test grounded in real
+behavior, it is likely an implementation detail that SHOULD survive.
+Record it as `intentional_survivor` in the progress log with reasoning.
+
+**Prohibited test patterns:**
+- Tests that assert internal variable values not visible to users/API
+- Tests that assert call counts on internal functions
+- Tests that duplicate existing assertions with different syntax
+- Tests whose only purpose is killing a specific mutant at a specific line
+
+The goal is behavior coverage, not line coverage. A high mutation score
+from implementation-shaped tests is worse than a moderate score from
+behavior-shaped tests.
+
 ### 5. DO NOT modify source unless a mutant reveals a real bug (rare)
 
 99% of the time, a surviving mutant means your tests are incomplete. Add
@@ -104,6 +125,28 @@ off-by-one; a missing `null` check). In that case:
 If you are uncertain whether the mutant reveals a real bug or just a missing
 test, err toward "add a test" — the test will reveal whether the source is
 wrong when it runs.
+
+**Pre-commit diff audit (MANDATORY):**
+
+Before committing, verify the diff does not weaken existing tests:
+
+1. Run `git diff --stat` — check for deleted test files
+2. Run `git diff -- '**/*.test.*' '**/*.spec.*'` — inspect test changes:
+   - No `describe.skip`, `it.skip`, `xit`, `xdescribe` added
+   - No `.only` added (accidentally scoping down the suite)
+   - No assertion matchers weakened (e.g., `toBe` → `toBeTruthy`,
+     `toEqual` → `toBeDefined`, `toThrow` → removed)
+   - No `expect` calls removed from existing tests
+   - No test files deleted
+3. Count total assertions before and after (if JSON reporter available):
+   `assertion_count_after >= assertion_count_before`
+
+If any weakening is detected: ABORT. Do not commit. Record the
+attempted weakening in progress.txt with the file and line.
+
+**This check is non-negotiable.** The stop-rules say "never weaken a
+test" — this step makes that rule mechanically verifiable instead of
+self-reported.
 
 ### 6. Commit with HARDEN: prefix
 
