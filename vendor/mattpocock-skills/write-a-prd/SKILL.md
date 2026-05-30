@@ -582,12 +582,19 @@ For each story, use this template:
 - Lowest confidence: [HIGH/MEDIUM/LOW — inherited from the least-confident backing DEC]
 - Hardest reversibility: [EASY/MODERATE/HARD — inherited from the hardest-to-reverse backing DEC]
 - Widest scope-risk: [LOCAL/MODULE/SYSTEM — inherited from the widest-scope backing DEC]
+- Valid Until: [YYYY-MM-DD — earliest Valid Until date from backing DECs, or "None"]
 
 If any backing decision has LOW confidence, flag it:
 > ⚠ This story is backed by DEC-NNN (LOW confidence). Consider early validation: prototype, user test, or technical spike before full build.
 
 If any backing decision has HARD reversibility, flag it:
 > ⚠ DEC-NNN is HARD to reverse. Rollback plan: [from DEC record]. Allocate extra review and testing.
+
+If any backing decision has a non-empty Counterargument, include it regardless of confidence level:
+> Counterargument (DEC-NNN): [strongest genuine attack on the selected option]
+
+If any backing decision has a Prediction, include it regardless of confidence level:
+> Prediction (DEC-NNN): [observable prediction that validates or falsifies the decision]
 
 **In Scope**
 - [explicit included behavior] (DEC-NNN)
@@ -678,6 +685,13 @@ For stories where all backing decisions are HIGH confidence + EASY reversibility
 - [known edge case]
 - [rollback implications if any backing DEC has HARD reversibility]
 - [counterarguments from backing DECs that builders should be aware of]
+- [predictions from backing DECs that builders should preserve or instrument]
+
+Counterargument MUST be included for ALL stories where any backing DEC
+has a non-empty Counterargument field. Prediction MUST be included for
+ALL stories where any backing DEC has a Prediction field. Do not gate
+these on LOW confidence or HARD reversibility — even HIGH confidence
+decisions can be wrong, and the builder needs the strongest attack.
 
 Repeat this structure for every BUILD story.
 

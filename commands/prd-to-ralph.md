@@ -54,6 +54,8 @@ PRD pipeline was designed to eliminate.
 | Acceptance criteria + edge cases | `tests` | Structured extraction (see below) |
 | Test names from tests field | `fail_to_pass` | Pinned oracle names: `{module}.{feature}.{behavior}` |
 | External Prerequisites | `external_prerequisites` | Copy verbatim; `"None"` if absent |
+| Valid Until | `valid_until` | Earliest Valid Until date from backing DECs; `null` if none |
+| Dependencies | `dependencies` | Compiled prd.json IDs resolved from PRD story dependencies |
 | Decision Tier | `tier` | Highest tier among backing DECs (deep > standard > tactical > note) |
 | Initial state | `passes` | Always `false` |
 
@@ -130,6 +132,7 @@ or interpret:
 12. **Dependencies** on other stories
 13. **Screen/Wireframe** reference
 14. **Priority** (MUST / SHOULD)
+15. **Valid Until** from Decision Metadata
 
 <HARD-GATE>
 If ANY BUILD story in the PRD is missing acceptance criteria or decision
@@ -143,6 +146,25 @@ entries that the builder fills with guesses.
 Fix the PRD first: /write-a-prd
 ```
 </HARD-GATE>
+
+### Step 2b: Domain context availability check
+
+For each BUILD story being compiled, check whether required domain
+context files exist. Missing context is a WARNING, not a compilation
+blocker, but the warning MUST be written to the compilation manifest.
+
+- If the story's category is `data` or `crud`, or the story's
+  `data_model` field is non-empty: require `.planning/data-requirements.md`.
+  If missing, warn: `Story {id} touches data but no data-grill context found. Run /data-grill first.`
+- If the story has `ui_details` that are non-empty and not `N/A`:
+  require `.planning/ui-brief.md`. If missing, warn:
+  `Story {id} has UI details but no UI brief found. Run /ui-brief first.`
+- If the story has page routes: require `.planning/ux-brief.md`. If
+  missing, warn:
+  `Story {id} has page routes but no UX brief found. Run /ux-brief first.`
+
+Record all warnings under `## Warnings` in the compilation manifest so
+the operator sees them before build starts.
 
 ### Step 3: Dependency-sort into priority order
 
@@ -269,6 +291,10 @@ work around) if any of these trigger.]
 - Widest scope-risk: [LOCAL/MODULE/SYSTEM]
 [If LOW confidence or HARD reversibility, copy the PRD's warning:]
 - ⚠ [Warning text from PRD about the specific risky DEC]
+[If present in the PRD story, always copy Counterargument and Prediction
+items from backing DECs regardless of confidence level:]
+- Counterargument (DEC-NNN): [strongest genuine attack]
+- Prediction (DEC-NNN): [observable validation/falsification signal]
 
 ## Verification Anchors
 - Route: [route path]
@@ -410,7 +436,24 @@ should verify these before starting implementation.
 
 If no external prerequisites: `"None"`.
 
-#### 4l. The `tier` field
+#### 4l. The `valid_until` field
+
+Copy the earliest Valid Until date from the story's backing DECs. If
+all backing DECs have no expiration, set `valid_until` to `null`.
+
+Use ISO date format (`YYYY-MM-DD`). Do not infer expiration dates.
+
+#### 4m. The `dependencies` field
+
+Compile an array of prd.json entry IDs this story depends on. Map from
+the PRD story's `Dependencies` field.
+
+- If a dependency references a PRD story ID (e.g., `S01`), resolve it to
+  the compiled prd.json ID (e.g., `auth-001`).
+- If no dependencies: `[]`.
+- Every dependency string MUST match an existing compiled entry ID.
+
+#### 4n. The `tier` field
 
 Copy from the story's Decision Metadata. Each backing DEC has a tier
 from the grill (`note`, `tactical`, `standard`, `deep`). Set the entry's
@@ -418,6 +461,30 @@ from the grill (`note`, `tactical`, `standard`, `deep`). Set the entry's
 `deep > standard > tactical > note`.
 
 If no backing DECs have a recorded tier: `"standard"`.
+
+Each compiled prd.json entry MUST include these fields:
+
+```json
+{
+  "id": "auth-001",
+  "category": "crud",
+  "risk_domain": "auth",
+  "description": "As a user, I want...",
+  "page": "N/A — Backend",
+  "ui_details": "N/A",
+  "behavior": "## What This Does\n...",
+  "data_model": "N/A",
+  "priority": 1,
+  "core": true,
+  "passes": false,
+  "tests": {"unit": [], "e2e": [], "edge_cases": []},
+  "fail_to_pass": [],
+  "external_prerequisites": "None",
+  "valid_until": null,
+  "dependencies": [],
+  "tier": "standard"
+}
+```
 
 ### Step 4j. Checkpoint gate — validate compiled entry before continuing
 
@@ -434,6 +501,10 @@ def validate_entry(entry, idx):
             errors.append(f'entry {idx} ({entry.get("id","?")}) missing behavior section: {section}')
     if not entry.get('fail_to_pass'):
         errors.append(f'entry {idx} ({entry.get("id","?")}) has empty fail_to_pass')
+    if entry.get('valid_until') is not None and not isinstance(entry.get('valid_until'), str):
+        errors.append(f'entry {idx} ({entry.get("id","?")}) valid_until must be YYYY-MM-DD string or null')
+    if not isinstance(entry.get('dependencies'), list) or not all(isinstance(dep, str) for dep in entry.get('dependencies', [])):
+        errors.append(f'entry {idx} ({entry.get("id","?")}) dependencies must be an array of strings')
     for t in entry.get('tests', {}).get('unit', []):
         if not t.get('source'):
             errors.append(f'entry {idx} ({entry.get("id","?")}) test "{t.get("name","?")}" missing DEC source')
@@ -464,6 +535,7 @@ mixing the two breaks builder lookups.
 ```markdown
 # Spec: {entry['id']} — {description}
 Original PRD Story: {original PRD story ID, e.g., S01}
+Valid Until: {valid_until date or null}
 
 ## Original PRD Story Text
 [Copy the ENTIRE PRD story section verbatim — all fields, all sections,
@@ -488,9 +560,11 @@ and include it here.]
   1. [Option A] — [tradeoff]
   2. [Option B] — [tradeoff]
 - **Counterargument:** [strongest genuine attack on the selected option]
+- **Prediction:** [observable prediction that validates or falsifies this decision]
 - **Confidence:** [HIGH/MEDIUM/LOW]
 - **Reversibility:** [EASY/MODERATE/HARD]
 - **Scope-Risk:** [LOCAL/MODULE/SYSTEM]
+- **Valid Until:** [YYYY-MM-DD or None]
 - **Consequences:**
   - Enables: [what this unlocks]
   - Constrains: [what this limits]
@@ -688,7 +762,7 @@ import json
 d = json.load(open('ralph/prd.json'))
 assert isinstance(d, list), 'prd.json must be a flat array'
 
-required = {'id','category','risk_domain','description','page','ui_details','behavior','data_model','priority','core','passes','tests','fail_to_pass','external_prerequisites','tier'}
+required = {'id','category','risk_domain','description','page','ui_details','behavior','data_model','priority','core','passes','tests','fail_to_pass','external_prerequisites','valid_until','dependencies','tier'}
 test_keys = {'unit','e2e','edge_cases'}
 behavior_sections = ['## Acceptance Criteria', '## Out of Scope', '## Escalation Conditions', '## Risk Flags', '## Verification Anchors', '## Completeness Check', '## Builder Notes']
 
@@ -718,6 +792,16 @@ for i, entry in enumerate(d):
     # fail_to_pass must not be empty
     if not entry.get('fail_to_pass'):
         errors.append(f'entry {i} ({entry.get(\"id\",\"?\")}) has empty or missing fail_to_pass')
+    if entry.get('valid_until') is not None and not isinstance(entry.get('valid_until'), str):
+        errors.append(f'entry {i} ({entry.get(\"id\",\"?\")}) valid_until must be YYYY-MM-DD string or null')
+    if not isinstance(entry.get('dependencies'), list) or not all(isinstance(x, str) for x in entry.get('dependencies', [])):
+        errors.append(f'entry {i} ({entry.get(\"id\",\"?\")}) dependencies must be an array of strings')
+
+ids = {entry.get('id') for entry in d}
+for i, entry in enumerate(d):
+    for dep in entry.get('dependencies', []):
+        if dep not in ids:
+            errors.append(f'entry {i} ({entry.get(\"id\",\"?\")}) dependency {dep!r} does not match an existing entry id')
 
 if errors:
     for e in errors:
@@ -749,7 +833,10 @@ For each entry, also verify:
     - E2E test names appear prefixed with `e2e.`
     - Edge case names appear prefixed with `edge.`
 13. `external_prerequisites` is a string
-14. `tier` is one of: `note`, `tactical`, `standard`, `deep`
+14. `valid_until` is either `null` or a `YYYY-MM-DD` string
+15. `dependencies` is an array of strings, each matching an existing
+    entry `id`
+16. `tier` is one of: `note`, `tactical`, `standard`, `deep`
 
 If any entry fails type/shape validation, fix it before writing to
 prd.json. Log the violation in the manifest.
@@ -763,10 +850,12 @@ CATEGORIES = {'data','layout','ui','crud','settings','interaction'}
 RISK_DOMAINS = {'auth','payments','user_data','migrations',None}
 TIERS = {'note','tactical','standard','deep'}
 ID_RE = re.compile(r'^[a-z][a-z0-9-]+$')
+DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 SOURCE_RE = re.compile(r'^(DEC-\d+|[A-Za-z0-9_.-]+)$')
 
 errors = []
 seen_priorities = set()
+ids = {e.get('id') for e in d}
 for i, e in enumerate(d):
     eid = e.get('id','?')
     if not isinstance(e.get('id'), str) or not ID_RE.match(e.get('id','')):
@@ -817,6 +906,16 @@ for i, e in enumerate(d):
                 errors.append(f'entry {i} ({eid}): fail_to_pass entry {name!r} has no matching test')
     if not isinstance(e.get('external_prerequisites'), str):
         errors.append(f'entry {i} ({eid}): external_prerequisites must be string')
+    vu = e.get('valid_until')
+    if vu is not None and (not isinstance(vu, str) or not DATE_RE.match(vu)):
+        errors.append(f'entry {i} ({eid}): valid_until must be YYYY-MM-DD string or null')
+    deps = e.get('dependencies')
+    if not isinstance(deps, list) or not all(isinstance(dep, str) for dep in deps):
+        errors.append(f'entry {i} ({eid}): dependencies must be array of strings')
+    else:
+        for dep in deps:
+            if dep not in ids:
+                errors.append(f'entry {i} ({eid}): dependency {dep!r} does not match an existing entry id')
     if e.get('tier') not in TIERS:
         errors.append(f'entry {i} ({eid}): tier {e.get(\"tier\")!r} not in {TIERS}')
 
@@ -854,6 +953,9 @@ cat > ralph/compilation-manifest.md << 'EOF'
 ## UX brief used: [yes/no]
 ## Data requirements used: [yes/no]
 ## Infra requirements used: [yes/no]
+
+## Warnings
+- [Domain context warning, or "None"]
 
 ## Spec File Enrichment
 - Decision records injected: [N] unique DEC records across [N] spec files

@@ -44,7 +44,23 @@ Attached in-context:
 3. If the entry has a `branchName` field, check out that branch first.
    Otherwise stay on the current branch (usually `main`).
 4. Read the entry's `behavior`, `data_model`, `tests`, `page`, `ui_details`.
-   These are the spec. Do not invent requirements not listed here.
+   These are the compressed spec index. Do not invent requirements not
+   listed here.
+5. **Read the enriched spec file.** Open `ralph/specs/{entry.id}.md` for
+   the full uncompressed context. This file contains:
+   - The original PRD story text (not compressed into prd.json fields)
+   - Full DEC records for every backing decision (not just IDs)
+   - Domain context: Data Model, UX, UI, and Infra sections from grilling
+   - Cross-references to related decisions and stories
+
+   The prd.json entry is a compressed index. The spec file is the full
+   source of truth. When the prd.json behavior field is ambiguous or
+   insufficient, the spec file resolves it.
+
+   **For HIGH-RISK stories** (`risk_domain`: `auth`, `payments`,
+   `user_data`, or `tier`: `deep`): reading the spec file is MANDATORY.
+   Do not implement without reviewing the full DEC records and domain
+   context.
 
 ### 2b. Parse the structured behavior field
 The `behavior` field contains 7 structured sections compiled from the PRD.
@@ -89,10 +105,10 @@ underspecified — emit ABORT.
 
 ### 2c. Read the full spec file (if available)
 
-If `ralph/specs/{story-id}.md` exists, read it. This contains the
-FULL uncompressed PRD story text — all context, all decision backing,
-all rationale. Use it when the compressed `behavior` field in prd.json
-doesn't give you enough context to make a judgment call.
+Read `ralph/specs/{story-id}.md`. This contains the FULL uncompressed
+PRD story text — all context, all decision backing, all rationale. Use
+it when the compressed `behavior` field in prd.json doesn't give you
+enough context to make a judgment call.
 
 The spec file is the authoritative source. The behavior field is a
 summary. When they conflict, the spec file wins.
