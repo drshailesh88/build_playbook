@@ -53,6 +53,8 @@ PRD pipeline was designed to eliminate.
 | Has dependents? | `core` | `true` if other BUILD stories list this as dependency |
 | Acceptance criteria + edge cases | `tests` | Structured extraction (see below) |
 | Test names from tests field | `fail_to_pass` | Pinned oracle names: `{module}.{feature}.{behavior}` |
+| External Prerequisites | `external_prerequisites` | Copy verbatim; `"None"` if absent |
+| Decision Tier | `tier` | Highest tier among backing DECs (deep > standard > tactical > note) |
 | Initial state | `passes` | Always `false` |
 
 ## Flags
@@ -62,6 +64,23 @@ PRD pipeline was designed to eliminate.
 - `--from-existing=<path>` — append to an existing prd.json instead of
   overwriting (useful when a new feature needs to land mid-build).
 - `--dry-run` — print compiled entries without writing.
+
+**Flag threading:**
+- `--out=<path>`: All references to `ralph/prd.json` below use this
+  path instead. The spec directory is derived as
+  `{dirname(out)}/specs/`. The manifest is written alongside as
+  `{dirname(out)}/compilation-manifest.md`.
+- `--from-existing`: Read the existing file at the output path first.
+  Preserve all entries where `passes:true`. Append new entries. Skip
+  any entry whose `id` already exists in the existing file (no
+  duplicates). Log skipped and preserved counts in the manifest.
+
+Default (no flags): output to `ralph/prd.json`, specs to `ralph/specs/`,
+manifest to `ralph/compilation-manifest.md`.
+
+Throughout the steps below, every literal path `ralph/prd.json`,
+`ralph/specs/`, and `ralph/compilation-manifest.md` is the DEFAULT and
+MUST be replaced with the resolved path when `--out` is supplied.
 
 ## Preconditions
 
@@ -169,6 +188,26 @@ Map to one of Huntley's categories:
 If a story spans multiple categories, use the primary one (where most
 acceptance criteria live).
 
+#### 4b2. The `risk_domain` field
+
+Separate from `category` (which drives build ordering), `risk_domain`
+drives safety classification. Extract from the story's domain:
+
+- Story touches authentication, login, sessions, tokens → `"auth"`
+- Story touches payments, billing, subscriptions, pricing → `"payments"`
+- Story touches PII, user profiles, account deletion, data export → `"user_data"`
+- Story touches data migrations, destructive operations → `"migrations"`
+- None of the above → `null`
+
+Derive mechanically from: the story title, In Scope items, acceptance
+criteria triggers, and backing DEC topics. If ANY acceptance criterion
+mentions auth/login/token/session/password, set `"auth"`. If ANY
+mentions payment/charge/invoice/subscription, set `"payments"`. If ANY
+mentions PII/profile/account deletion/data export, set `"user_data"`.
+If ANY mentions migration/destructive/drop/truncate, set `"migrations"`.
+If multiple domains apply, choose the highest-risk one in this order:
+auth > payments > user_data > migrations.
+
 #### 4c. The `description` field
 
 Copy the story sentence verbatim: "As a [actor], I want [capability],
@@ -249,11 +288,11 @@ The `behavior` field MUST contain all 7 sections. If the PRD story is
 missing a section, the default depends on the story's risk profile.
 
 **Determine the story's risk tier first:**
-- **HIGH-RISK:** category is `auth`, `payments`, `user_data`, OR any
-  backing DEC has HARD reversibility, OR any backing DEC has SYSTEM
-  scope-risk. Also high-risk: stories that touch credentials, tokens,
-  billing, PII, or destructive data operations (even if category is
-  `crud` or `data`).
+- **HIGH-RISK:** `risk_domain` is `"auth"`, `"payments"`, `"user_data"`,
+  or `"migrations"`, OR any backing DEC has HARD reversibility, OR any
+  backing DEC has SYSTEM scope-risk. The `risk_domain` field (Step 4b2)
+  is mechanically derived so destructive-operation, credential-handling,
+  and PII-touching stories are flagged regardless of their `category`.
 - **STANDARD-RISK:** everything else.
 
 Then apply the appropriate default:
@@ -362,6 +401,24 @@ The builder MUST name its test files and test descriptions to match
 these entries. The QA agent verifies the exact names exist in the test
 suite output.
 
+#### 4k. The `external_prerequisites` field
+
+Copy from the PRD story's External Prerequisites field. If the story
+lists external prerequisites (e.g., "Stripe API configured", "Auth
+provider deployed"), these must be present at build time. The builder
+should verify these before starting implementation.
+
+If no external prerequisites: `"None"`.
+
+#### 4l. The `tier` field
+
+Copy from the story's Decision Metadata. Each backing DEC has a tier
+from the grill (`note`, `tactical`, `standard`, `deep`). Set the entry's
+`tier` to the highest among all backing DECs, ordered:
+`deep > standard > tactical > note`.
+
+If no backing DECs have a recorded tier: `"standard"`.
+
 ### Step 4j. Checkpoint gate — validate compiled entry before continuing
 
 After compiling EACH story entry, validate it immediately before moving
@@ -399,14 +456,23 @@ FULL PRD story text — uncompressed, with all context a builder needs.
 mkdir -p ralph/specs
 ```
 
-For each story entry, write `ralph/specs/{story-id}.md`:
+For each compiled entry, write `ralph/specs/{entry['id']}.md` — using
+the COMPILED prd.json ID (e.g., `auth-001`), not the original PRD story
+ID (e.g., `S01`). Downstream tools always reference the compiled ID;
+mixing the two breaks builder lookups.
 
 ```markdown
-# Spec: {story-id} — {description}
+# Spec: {entry['id']} — {description}
+Original PRD Story: {original PRD story ID, e.g., S01}
 
 ## Original PRD Story Text
 [Copy the ENTIRE PRD story section verbatim — all fields, all sections,
 all decision backing, all risk metadata. This is the FULL context.]
+
+## External Prerequisites
+[Copy the story's External Prerequisites verbatim. The builder MUST
+verify each prerequisite is present at build time before starting
+implementation. If "None", state so explicitly.]
 
 ## Decision Records (referenced by this story)
 
@@ -515,8 +581,9 @@ This is well within context budget since only one spec file is read per
 iteration.
 
 The build-prompt instructs the builder to read
-`ralph/specs/{story-id}.md` for full context when the compressed
-`behavior` field in prd.json isn't sufficient. This is the
+`ralph/specs/{entry['id']}.md` (the compiled prd.json ID) for full
+context when the compressed `behavior` field in prd.json isn't
+sufficient. This is the
 full-spec-per-iteration pattern — the builder always has access to
 the uncompressed original, the full decision records, and the relevant
 domain context.
@@ -621,7 +688,7 @@ import json
 d = json.load(open('ralph/prd.json'))
 assert isinstance(d, list), 'prd.json must be a flat array'
 
-required = {'id','category','description','page','ui_details','behavior','data_model','priority','core','passes','tests','fail_to_pass'}
+required = {'id','category','risk_domain','description','page','ui_details','behavior','data_model','priority','core','passes','tests','fail_to_pass','external_prerequisites','tier'}
 test_keys = {'unit','e2e','edge_cases'}
 behavior_sections = ['## Acceptance Criteria', '## Out of Scope', '## Escalation Conditions', '## Risk Flags', '## Verification Anchors', '## Completeness Check', '## Builder Notes']
 
@@ -662,6 +729,105 @@ print(f'OK: {len(d)} entries, all shape-valid, all behavior sections present')
 
 Abort on ANY error. Do not proceed with a structurally incomplete prd.json.
 
+**Type and shape validation (Step 7b):**
+
+For each entry, also verify:
+1. `id` is a non-empty string matching `^[a-z][a-z0-9-]+$` (kebab-case)
+2. `category` is one of: `data`, `layout`, `ui`, `crud`, `settings`, `interaction`
+3. `risk_domain` is one of: `auth`, `payments`, `user_data`, `migrations`, `null`
+4. `description` is a non-empty string
+5. `page` is a non-empty string
+6. `priority` is a positive integer, unique across all entries
+7. `core` is a boolean
+8. `passes` is `false` (for new compilations)
+9. `tests.unit`, `tests.e2e`, `tests.edge_cases` are arrays (may be empty)
+10. Every test object in those arrays has `name` (string), `description`
+    (string), and `source` (string matching `DEC-\d+` or known sources)
+11. `fail_to_pass` is a non-empty array of strings
+12. Every `fail_to_pass` entry corresponds to a test name:
+    - Unit test names appear directly
+    - E2E test names appear prefixed with `e2e.`
+    - Edge case names appear prefixed with `edge.`
+13. `external_prerequisites` is a string
+14. `tier` is one of: `note`, `tactical`, `standard`, `deep`
+
+If any entry fails type/shape validation, fix it before writing to
+prd.json. Log the violation in the manifest.
+
+```bash
+python3 -c "
+import json, re
+d = json.load(open('ralph/prd.json'))
+
+CATEGORIES = {'data','layout','ui','crud','settings','interaction'}
+RISK_DOMAINS = {'auth','payments','user_data','migrations',None}
+TIERS = {'note','tactical','standard','deep'}
+ID_RE = re.compile(r'^[a-z][a-z0-9-]+$')
+SOURCE_RE = re.compile(r'^(DEC-\d+|[A-Za-z0-9_.-]+)$')
+
+errors = []
+seen_priorities = set()
+for i, e in enumerate(d):
+    eid = e.get('id','?')
+    if not isinstance(e.get('id'), str) or not ID_RE.match(e.get('id','')):
+        errors.append(f'entry {i} ({eid}): id must be non-empty kebab-case')
+    if e.get('category') not in CATEGORIES:
+        errors.append(f'entry {i} ({eid}): category {e.get(\"category\")!r} not in {CATEGORIES}')
+    if e.get('risk_domain') not in RISK_DOMAINS:
+        errors.append(f'entry {i} ({eid}): risk_domain {e.get(\"risk_domain\")!r} not in {RISK_DOMAINS}')
+    if not isinstance(e.get('description'), str) or not e.get('description'):
+        errors.append(f'entry {i} ({eid}): description must be non-empty string')
+    if not isinstance(e.get('page'), str) or not e.get('page'):
+        errors.append(f'entry {i} ({eid}): page must be non-empty string')
+    p = e.get('priority')
+    if not isinstance(p, int) or isinstance(p, bool) or p < 1:
+        errors.append(f'entry {i} ({eid}): priority must be positive integer')
+    elif p in seen_priorities:
+        errors.append(f'entry {i} ({eid}): priority {p} duplicated')
+    else:
+        seen_priorities.add(p)
+    if not isinstance(e.get('core'), bool):
+        errors.append(f'entry {i} ({eid}): core must be boolean')
+    if e.get('passes') is not False:
+        errors.append(f'entry {i} ({eid}): passes must be false on new compilation')
+    tests = e.get('tests', {})
+    for bucket in ('unit','e2e','edge_cases'):
+        arr = tests.get(bucket)
+        if not isinstance(arr, list):
+            errors.append(f'entry {i} ({eid}): tests.{bucket} must be array')
+            continue
+        for j, t in enumerate(arr):
+            if not isinstance(t.get('name'), str) or not t.get('name'):
+                errors.append(f'entry {i} ({eid}): tests.{bucket}[{j}] missing name')
+            if not isinstance(t.get('description'), str) and not isinstance(t.get('expected'), str) and not isinstance(t.get('expected_output'), str):
+                errors.append(f'entry {i} ({eid}): tests.{bucket}[{j}] missing description/expected')
+            src = t.get('source','')
+            if not isinstance(src, str) or not SOURCE_RE.match(src):
+                errors.append(f'entry {i} ({eid}): tests.{bucket}[{j}] source must match DEC-\\d+ or known source')
+    ftp = e.get('fail_to_pass')
+    if not isinstance(ftp, list) or not ftp or not all(isinstance(x, str) for x in ftp):
+        errors.append(f'entry {i} ({eid}): fail_to_pass must be non-empty array of strings')
+    else:
+        unit_names = {t['name'] for t in tests.get('unit', []) if isinstance(t.get('name'), str)}
+        e2e_names = {f\"e2e.{t['name']}\" for t in tests.get('e2e', []) if isinstance(t.get('name'), str)}
+        edge_names = {f\"edge.{t['name']}\" for t in tests.get('edge_cases', []) if isinstance(t.get('name'), str)}
+        all_names = unit_names | e2e_names | edge_names
+        for name in ftp:
+            if name not in all_names:
+                errors.append(f'entry {i} ({eid}): fail_to_pass entry {name!r} has no matching test')
+    if not isinstance(e.get('external_prerequisites'), str):
+        errors.append(f'entry {i} ({eid}): external_prerequisites must be string')
+    if e.get('tier') not in TIERS:
+        errors.append(f'entry {i} ({eid}): tier {e.get(\"tier\")!r} not in {TIERS}')
+
+if errors:
+    for err in errors:
+        print(f'ERROR: {err}')
+    raise SystemExit(1)
+print(f'OK: {len(d)} entries pass type/shape validation')
+"
+```
+
 ### Step 8: Write the compilation manifest
 
 Save a manifest alongside prd.json so the pipeline is auditable:
@@ -671,8 +837,12 @@ cat > ralph/compilation-manifest.md << 'EOF'
 # prd.json Compilation Manifest
 **Compiled at:** [ISO timestamp]
 **Source PRD:** [path]
+**Output path:** [resolved output path — `ralph/prd.json` or `--out` value]
 **PRD decision count:** [N] decisions compiled
 **Stories compiled:** [N] BUILD stories
+**Existing entries preserved (`--from-existing`):** [N] (0 if flag absent)
+**New entries appended:** [N]
+**Duplicates skipped (id already present):** [N]
 
 ## Compilation Map
 | prd.json ID | PRD Story | DEC Backing | Risk Level | Escalation? |
