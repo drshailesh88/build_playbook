@@ -40,7 +40,10 @@ EOF
 # Extract lightweight learnings
 LOCK_DIR="$LEARNINGS_DIR/.learnings.lockdir"
 if mkdir "$LOCK_DIR" 2>/dev/null; then
-  trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+  _unlock() { trap - EXIT INT TERM; rmdir "$LOCK_DIR" 2>/dev/null; }
+  trap _unlock EXIT
+  trap '_unlock; exit 130' INT
+  trap '_unlock; exit 143' TERM
 
   EXISTING_LEARNINGS=""
   if [ -f "$LEARNINGS_FILE" ]; then
@@ -83,7 +86,7 @@ if mkdir "$LOCK_DIR" 2>/dev/null; then
     fi
   fi
 
-  rmdir "$LOCK_DIR" 2>/dev/null
+  _unlock
 fi
 
 # Check for planning decision artifacts
