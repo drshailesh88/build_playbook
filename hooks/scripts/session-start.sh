@@ -5,7 +5,9 @@
 # Makes every session smarter than the last.
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-PROJECT_SLUG=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+PROJECT_BASE=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+PROJECT_HASH=$(printf '%s' "$PROJECT_DIR" | shasum -a 256 | cut -c1-8)
+PROJECT_SLUG="${PROJECT_BASE}-${PROJECT_HASH}"
 
 # Only run once per project per hour
 SESSION_MARKER="$HOME/.buildplaybook/.session-started-${PROJECT_SLUG}-$(date +%Y%m%d%H)"

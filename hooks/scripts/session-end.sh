@@ -7,15 +7,15 @@
 
 # Determine project directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-PROJECT_SLUG=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+PROJECT_BASE=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+PROJECT_HASH=$(printf '%s' "$PROJECT_DIR" | shasum -a 256 | cut -c1-8)
+PROJECT_SLUG="${PROJECT_BASE}-${PROJECT_HASH}"
 
 LEARNINGS_DIR="$HOME/.buildplaybook/projects/$PROJECT_SLUG"
 mkdir -p "$LEARNINGS_DIR"
 LEARNINGS_FILE="$LEARNINGS_DIR/learnings.jsonl"
-EXISTING_LEARNINGS=""
-if [ -f "$LEARNINGS_FILE" ]; then
-  EXISTING_LEARNINGS=$(cat "$LEARNINGS_FILE")
-fi
+PLANNING_DIR="$PROJECT_DIR/.planning"
+GRILL_LOG="$PLANNING_DIR/grill-log.md"
 
 # Save session state
 SESSION_FILE="$LEARNINGS_DIR/last-session.md"
@@ -37,43 +37,51 @@ $(cd "$PROJECT_DIR" 2>/dev/null && git branch --show-current 2>/dev/null || echo
 EOF
 
 # Extract lightweight learnings
-LEARNING_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+LOCK_FILE="$LEARNINGS_DIR/.learnings.lock"
+(
+  flock -n 200 || exit 0
 
-cd "$PROJECT_DIR" 2>/dev/null && git log --oneline --since='4 hours ago' --grep='fix' 2>/dev/null | while IFS= read -r COMMIT; do
-  COMMIT_SHORT=$(echo "$COMMIT" | cut -d' ' -f1)
-  if echo "$EXISTING_LEARNINGS" | grep -q "$COMMIT_SHORT"; then
-    continue
+  EXISTING_LEARNINGS=""
+  if [ -f "$LEARNINGS_FILE" ]; then
+    EXISTING_LEARNINGS=$(cat "$LEARNINGS_FILE")
   fi
-  CONTENT=$(printf '%s' "Recent fix commit: $COMMIT" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"pitfall\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.5}" >> "$LEARNINGS_FILE"
-done
 
-PLANNING_DIR="$PROJECT_DIR/.planning"
-GRILL_LOG="$PLANNING_DIR/grill-log.md"
-if [ -f "$GRILL_LOG" ]; then
-  DECIDED=$(grep -c "Status: DECIDED" "$GRILL_LOG" 2>/dev/null || echo 0)
-  GRILL_LAST_FILE="$LEARNINGS_DIR/.grill-decided-last-count"
-  GRILL_LAST=$(cat "$GRILL_LAST_FILE" 2>/dev/null || echo "$PREVIOUS_DECIDED")
-  if [ "$DECIDED" -gt "$GRILL_LAST" ]; then
-    NEW_DECIDED=$((DECIDED - GRILL_LAST))
-    CONTENT=$(printf '%s' "$NEW_DECIDED new architecture decisions recorded in grill-log.md" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"architecture\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.6}" >> "$LEARNINGS_FILE"
-    echo "$DECIDED" > "$GRILL_LAST_FILE"
-  fi
-fi
+  LEARNING_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-GATEGUARD_SESSION="$HOME/.gstack/gateguard/session-$(date +%Y%m%d).txt"
-if [ -f "$GATEGUARD_SESSION" ]; then
-  GATEGUARD_LINES=$(wc -l < "$GATEGUARD_SESSION" | tr -d ' ')
-  GATEGUARD_LAST_FILE="$HOME/.buildplaybook/.gateguard-last-count"
-  GATEGUARD_LAST=$(cat "$GATEGUARD_LAST_FILE" 2>/dev/null || echo 0)
-  if [ "$GATEGUARD_LINES" -gt "$GATEGUARD_LAST" ]; then
-    NEW_INVESTIGATIONS=$((GATEGUARD_LINES - GATEGUARD_LAST))
-    CONTENT=$(printf '%s' "GateGuard recorded $NEW_INVESTIGATIONS new investigation lines today" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"pattern\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.3}" >> "$LEARNINGS_FILE"
-    echo "$GATEGUARD_LINES" > "$GATEGUARD_LAST_FILE"
+  cd "$PROJECT_DIR" 2>/dev/null && git log --oneline --since='4 hours ago' --grep='fix' 2>/dev/null | while IFS= read -r COMMIT; do
+    COMMIT_SHORT=$(echo "$COMMIT" | cut -d' ' -f1)
+    if echo "$EXISTING_LEARNINGS" | grep -q "$COMMIT_SHORT"; then
+      continue
+    fi
+    CONTENT=$(printf '%s' "Recent fix commit: $COMMIT" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"pitfall\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.5}" >> "$LEARNINGS_FILE"
+  done
+
+  if [ -f "$GRILL_LOG" ]; then
+    DECIDED=$(grep -c "Status: DECIDED" "$GRILL_LOG" 2>/dev/null || echo 0)
+    GRILL_LAST_FILE="$LEARNINGS_DIR/.grill-decided-last-count"
+    GRILL_LAST=$(cat "$GRILL_LAST_FILE" 2>/dev/null || echo "$PREVIOUS_DECIDED")
+    if [ "$DECIDED" -gt "$GRILL_LAST" ]; then
+      NEW_DECIDED=$((DECIDED - GRILL_LAST))
+      CONTENT=$(printf '%s' "$NEW_DECIDED new architecture decisions recorded in grill-log.md" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"architecture\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.6}" >> "$LEARNINGS_FILE"
+      echo "$DECIDED" > "$GRILL_LAST_FILE"
+    fi
   fi
-fi
+
+  GATEGUARD_SESSION="$HOME/.gstack/gateguard/session-$(date +%Y%m%d).txt"
+  if [ -f "$GATEGUARD_SESSION" ]; then
+    GATEGUARD_LINES=$(wc -l < "$GATEGUARD_SESSION" | tr -d ' ')
+    GATEGUARD_LAST_FILE="$LEARNINGS_DIR/.gateguard-last-count-$(date +%Y%m%d)"
+    GATEGUARD_LAST=$(cat "$GATEGUARD_LAST_FILE" 2>/dev/null || echo 0)
+    if [ "$GATEGUARD_LINES" -gt "$GATEGUARD_LAST" ]; then
+      NEW_INVESTIGATIONS=$((GATEGUARD_LINES - GATEGUARD_LAST))
+      CONTENT=$(printf '%s' "GateGuard recorded $NEW_INVESTIGATIONS new investigation lines today" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"pattern\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.3}" >> "$LEARNINGS_FILE"
+      echo "$GATEGUARD_LINES" > "$GATEGUARD_LAST_FILE"
+    fi
+  fi
+) 200>"$LOCK_FILE"
 
 # Check for planning decision artifacts
 if [ -d "$PLANNING_DIR" ]; then
