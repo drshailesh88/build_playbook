@@ -5,8 +5,9 @@
 # Makes every session smarter than the last.
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-PROJECT_BASE=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
-PROJECT_HASH=$(printf '%s' "$PROJECT_DIR" | shasum -a 256 | cut -c1-8)
+CANONICAL_DIR=$(cd "$PROJECT_DIR" 2>/dev/null && pwd -P || printf '%s' "$PROJECT_DIR")
+PROJECT_BASE=$(basename "$CANONICAL_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+PROJECT_HASH=$(printf '%s' "$CANONICAL_DIR" | shasum -a 256 | cut -c1-8)
 PROJECT_SLUG="${PROJECT_BASE}-${PROJECT_HASH}"
 
 # Only run once per project per hour

@@ -7,8 +7,9 @@
 
 # Determine project directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-PROJECT_BASE=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
-PROJECT_HASH=$(printf '%s' "$PROJECT_DIR" | shasum -a 256 | cut -c1-8)
+CANONICAL_DIR=$(cd "$PROJECT_DIR" 2>/dev/null && pwd -P || printf '%s' "$PROJECT_DIR")
+PROJECT_BASE=$(basename "$CANONICAL_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+PROJECT_HASH=$(printf '%s' "$CANONICAL_DIR" | shasum -a 256 | cut -c1-8)
 PROJECT_SLUG="${PROJECT_BASE}-${PROJECT_HASH}"
 
 LEARNINGS_DIR="$HOME/.buildplaybook/projects/$PROJECT_SLUG"
@@ -37,9 +38,9 @@ $(cd "$PROJECT_DIR" 2>/dev/null && git branch --show-current 2>/dev/null || echo
 EOF
 
 # Extract lightweight learnings
-LOCK_FILE="$LEARNINGS_DIR/.learnings.lock"
-(
-  flock -n 200 || exit 0
+LOCK_DIR="$LEARNINGS_DIR/.learnings.lockdir"
+if mkdir "$LOCK_DIR" 2>/dev/null; then
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 
   EXISTING_LEARNINGS=""
   if [ -f "$LEARNINGS_FILE" ]; then
@@ -81,7 +82,9 @@ LOCK_FILE="$LEARNINGS_DIR/.learnings.lock"
       echo "$GATEGUARD_LINES" > "$GATEGUARD_LAST_FILE"
     fi
   fi
-) 200>"$LOCK_FILE"
+
+  rmdir "$LOCK_DIR" 2>/dev/null
+fi
 
 # Check for planning decision artifacts
 if [ -d "$PLANNING_DIR" ]; then
