@@ -4,15 +4,15 @@
 # Loads project learnings and last session state into context.
 # Makes every session smarter than the last.
 
-# Only run once per session (date-based marker)
-SESSION_MARKER="$HOME/.buildplaybook/.session-started-$(date +%Y%m%d%H)"
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+PROJECT_SLUG=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+
+# Only run once per project per hour
+SESSION_MARKER="$HOME/.buildplaybook/.session-started-${PROJECT_SLUG}-$(date +%Y%m%d%H)"
 if [ -f "$SESSION_MARKER" ]; then
   exit 0
 fi
 touch "$SESSION_MARKER"
-
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-PROJECT_SLUG=$(basename "$PROJECT_DIR" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
 
 LEARNINGS_DIR="$HOME/.buildplaybook/projects/$PROJECT_SLUG"
 

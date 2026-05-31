@@ -24,10 +24,13 @@ case "$FILE_PATH" in
   *) exit 0 ;;
 esac
 
-REL_PATH="$FILE_PATH"
-case "$REL_PATH" in
-  *"/Build Playbook/"*) REL_PATH="${REL_PATH#*"/Build Playbook/"}" ;;
-esac
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+PROJECT_ROOT="${PROJECT_ROOT%/}/"
+if [[ "$FILE_PATH" == "$PROJECT_ROOT"* ]]; then
+  REL_PATH="${FILE_PATH#$PROJECT_ROOT}"
+else
+  exit 0
+fi
 REL_PATH="${REL_PATH#./}"
 REL_PATH="${REL_PATH#/}"
 
