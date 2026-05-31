@@ -18,6 +18,8 @@ AI makes the marginal cost of completeness near zero. When 100% coverage costs 7
 - **Lake** (boil it): full test coverage, all edge cases, complete error handling, comprehensive docs
 - **Ocean** (don't attempt): multi-quarter platform migrations, rewriting a framework, rebuilding infrastructure from scratch
 
+**Mechanized via autoresearch:** When 100% coverage costs 70 more lines and 30 more seconds of compute, the improvement loop does it automatically overnight. `/improve coverage` and `/lazy-dev` are the tools that make "boil the lake" a machine operation, not a human discipline.
+
 **Anti-patterns:**
 - Shipping 90% solutions when 100% costs 70 more lines
 - Deferring edge cases to "a follow-up PR"

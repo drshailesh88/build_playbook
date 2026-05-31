@@ -388,6 +388,29 @@ Use installed skills:
 **You do:** Walk through the app yourself. File issues for anything wrong.
 **Issues format:** Behavior description (no file paths), steps to reproduce, expected vs actual.
 
+### Step 6.6 — Autonomous Improvement (Optional)
+
+After the quality gates identify underperforming metrics, use autoresearch loops to drive them toward targets:
+
+```
+/improve <metric>
+```
+
+Drives one metric (tsc-errors, eslint, coverage, mutation, axe-violations, lighthouse-perf, lighthouse-a11y) toward its target using a keep/revert loop.
+
+For a full multi-metric pipeline:
+
+```
+/lazy-dev
+```
+
+Runs all underperforming metrics in safety-first order. Can generate an overnight script for unattended improvement of Tier 2/3 modules.
+
+**Rules:**
+- Never run on Tier 1 modules without human supervision
+- Always run the full QA harness (`/anneal-check --gate`) after improvement loops complete
+- Autoresearch improves metrics BETWEEN quality gate runs, never replaces them
+
 ---
 
 ## PHASE 7: FEATURE DOCUMENTATION & TESTING

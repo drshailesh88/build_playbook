@@ -28,6 +28,35 @@ for config in $PROTECTED_CONFIGS; do
 done
 
 if [ "$IS_PROTECTED" = false ]; then
+  # Phase-based file locking for autoresearch improvement loops
+  # Fast path: skip if no active lazy-dev state
+  PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+  LAZY_STATE="$PROJECT_DIR/.quality/goals/lazy-dev-state.md"
+  if [ -f "$LAZY_STATE" ]; then
+    ACTIVE_PHASE=$(grep "| in-progress |" "$LAZY_STATE" 2>/dev/null | head -1 | sed 's/.*| \([^ ]*\) |.*/\1/' | tr -d ' ')
+    if [ -n "$ACTIVE_PHASE" ]; then
+      case "$ACTIVE_PHASE" in
+        coverage|mutation)
+          # Test phase: block source edits
+          if echo "$FILE_PATH" | grep -qE '/(src|app|lib|components)/'; then
+            if ! echo "$FILE_PATH" | grep -qE '\.(test|spec)\.(ts|tsx|js|jsx)$'; then
+              echo "PHASE LOCK: $ACTIVE_PHASE phase — source files are READ-ONLY. Edit tests only." >&2
+              printf '{"permissionDecision":"deny","message":"Phase lock (%s): source files are read-only during test-improvement phases. Edit test files only."}\n' "$ACTIVE_PHASE"
+              exit 0
+            fi
+          fi
+          ;;
+        tsc-errors|eslint|axe-violations|lighthouse-perf|lighthouse-a11y|playwright-pass)
+          # Source phase: block test edits
+          if echo "$FILE_PATH" | grep -qE '\.(test|spec)\.(ts|tsx|js|jsx)$|/__tests__/|/tests?/'; then
+            echo "PHASE LOCK: $ACTIVE_PHASE phase — test files are READ-ONLY. Edit source only." >&2
+            printf '{"permissionDecision":"deny","message":"Phase lock (%s): test files are read-only during source-improvement phases. Edit source files only."}\n' "$ACTIVE_PHASE"
+            exit 0
+          fi
+          ;;
+      esac
+    fi
+  fi
   exit 0
 fi
 
