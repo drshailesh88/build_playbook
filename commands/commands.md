@@ -54,8 +54,10 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:qa-clean` — Clear stale locks + archive old runs' heavy artifacts
 - `/playbook:qa-unblock` — Reset a BLOCKED feature → pending + clear plateau buffer
 - `/playbook:qa-audit-violations` — Aggregate `violations.jsonl` across all runs by pattern
+- `/playbook:eval-check` — Run deterministic fixture evals for playbook command outputs
 
 ## Standalone
+- `/playbook:compact-context` — Save session state before auto-compaction
 - `/playbook:security-audit` — 6-check OWASP security review
 - `/playbook:verify-with-codex` — Cross-model code review
 - `/playbook:where-am-i` — Where am I? What's next? (10 seconds)

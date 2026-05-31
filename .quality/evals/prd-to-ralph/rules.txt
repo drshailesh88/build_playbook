@@ -1,0 +1,6 @@
+# Verify prd-to-ralph output has required fields
+test -f ralph/prd.json
+python3 -c "import json; d=json.load(open('ralph/prd.json')); assert isinstance(d, list), 'must be array'"
+python3 -c "import json; d=json.load(open('ralph/prd.json')); assert all('risk_domain' in e for e in d)"
+python3 -c "import json; d=json.load(open('ralph/prd.json')); assert all('dependencies' in e for e in d)"
+python3 -c "import json; d=json.load(open('ralph/prd.json')); assert all('valid_until' in e for e in d)"

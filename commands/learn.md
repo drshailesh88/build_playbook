@@ -60,11 +60,17 @@ Outputs all learnings as a readable markdown document, grouped by type.
 
 ## Automatic Learning Capture
 
-Learnings are also captured automatically by the session-end hook when:
-- A bug was fixed (record as `pitfall`)
-- A codebase pattern was discovered (record as `pattern`)
-- An architecture decision was made (record as `architecture`)
-- The user corrected the agent (record as `preference`)
+The session-end hook captures a narrow set of learnings automatically:
+- Bug fix commits (record as `pitfall`)
+- New grilling decisions (record as `architecture`)
+- GateGuard file investigations (record as `pattern`)
+
+Richer learnings require manual `/learn add`:
+- User preferences
+- Tool or library behavior
+- Detailed project patterns
+- Operational context
+- Anything important that did not appear in a bug fix commit, grilling decision, or GateGuard investigation
 
 ## How Learnings Are Used
 
