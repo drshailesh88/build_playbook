@@ -69,10 +69,14 @@ No claims without proof. No "should work" without running it. No "looks good" wi
 
 What you learn in one session must be available in the next. Discovered a project pattern? Record it. Found a bug trap? Document it. Hit a dead end? Log it so you never repeat it.
 
-- Learnings are stored per-project as JSONL
-- Session-end hooks extract what was learned
-- Session-start hooks load relevant learnings
-- The system compounds over time — session 50 is dramatically better than session 1
+Two layers of memory work together:
+
+- **Local JSONL** (fast, always available) — per-project learnings stored at `~/.buildplaybook/projects/{slug}/learnings.jsonl`. Session-end hooks extract what was learned. Session-start hooks load relevant learnings. Works offline. No contradiction handling.
+- **Supermemory** (durable, cross-project) — cloud-hosted persistent memory with knowledge graph, temporal reasoning, and automatic forgetting. Memories transfer across machines and projects. Old patterns are superseded when you change your mind. Noise expires naturally.
+
+Local is the fallback. Supermemory is the upgrade. Both run. If the API is down, local files still work. Supermemory adds durability, cross-project knowledge, and contradiction resolution on top.
+
+The system compounds over time — session 50 is dramatically better than session 1.
 
 ---
 

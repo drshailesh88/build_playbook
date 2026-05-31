@@ -51,6 +51,9 @@ claude plugin marketplace add ahmedasmar/devops-claude-skills
 
 # Project Management
 npx get-shit-done-cc@latest
+
+# Memory
+npx -y install-mcp@latest https://mcp.supermemory.ai/mcp --client claude --oauth=yes
 ```
 
 ### 0.3 — Install Playwright for Testing
@@ -66,6 +69,7 @@ npx playwright install chromium
 - [ ] All plugins installed (verify with `claude /plugins`)
 - [ ] Playwright installed
 - [ ] GSD initialized
+- [ ] Supermemory MCP installed (persistent memory)
 
 ---
 

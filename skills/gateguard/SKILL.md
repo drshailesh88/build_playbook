@@ -39,6 +39,7 @@ Stage 2: FORCE INVESTIGATION
   → Agent must:
     - grep -r "import.*from.*filename" . (find all callers)
     - Read the file (understand current state)
+    - recall("past changes and issues with {filename}") (check persistent memory)
     - State what's changing and why (prove understanding)
 
 Stage 3: ALLOW

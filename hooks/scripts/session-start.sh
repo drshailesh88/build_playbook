@@ -40,4 +40,9 @@ if [ -f "$LEARNINGS_DIR/learnings.jsonl" ]; then
   fi
 fi
 
+# Supermemory: instruct the agent to load persistent memory
+echo "SUPERMEMORY: Call recall(\"project context and recent decisions\", containerTag=\"$PROJECT_BASE\") to load persistent memory for this project." >&2
+echo "SUPERMEMORY: Call the /context prompt to load your user profile (stable preferences + recent activity)." >&2
+echo "" >&2
+
 exit 0

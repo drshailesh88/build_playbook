@@ -142,4 +142,8 @@ EOF
 fi
 
 echo "SESSION: State saved to $SESSION_FILE" >&2
+
+# Supermemory: instruct the agent to persist key learnings
+echo "SUPERMEMORY: Before ending, call memory() to save this session's key decisions, patterns discovered, and error resolutions. Use containerTag=\"$PROJECT_BASE\". Do NOT save trivial fixes or intermediate debugging steps." >&2
+
 exit 0

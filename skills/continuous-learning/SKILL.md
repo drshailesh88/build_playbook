@@ -81,6 +81,33 @@ Use `/learn` to interact with the learning system:
 - `/learn prune` — remove stale learnings
 - `/learn export` — markdown export
 
+## Two-Layer Architecture: Local + Supermemory
+
+The learning system operates on two layers. Both run simultaneously.
+
+| Layer | Local JSONL | Supermemory |
+|-------|------------|-------------|
+| **Speed** | Instant (filesystem read) | Network call (~200ms) |
+| **Availability** | Always (offline works) | Requires network |
+| **Scope** | Current project only | Cross-project, cross-machine |
+| **Contradictions** | Manual prune via `/learn prune` | Automatic temporal superseding |
+| **Forgetting** | Manual | Automatic (temporary context expires) |
+| **Knowledge graph** | None (flat list) | Relationships: updates, extends, contradicts |
+
+### What Goes Where
+
+- **Local only**: File paths, git branch names, temporary debug context
+- **Supermemory only**: Cross-project patterns, user preferences, tool behaviors
+- **Both**: Error resolutions, architecture decisions, codebase patterns
+
+### How They Interact
+
+When a learning is captured (automatically or via `/learn add`), it writes to local JSONL as before. The session-end hook also instructs the agent to save key learnings to Supermemory via `memory()`.
+
+At session start, the hook loads local state first (instant), then instructs the agent to call `recall()` and `/context` for richer cross-project memory.
+
+If Supermemory is unavailable, the local system works exactly as before. No degradation.
+
 ## The Compound Effect
 
 The system is designed to make session N+1 strictly better than session N. Over time, the agent accumulates deep project knowledge that would normally require reading the entire codebase and tribal knowledge from a senior developer.

@@ -91,6 +91,21 @@ echo "  4 reference guides → ~/.claude/"
 mkdir -p "$BP_DIR/projects"
 echo "  learnings store → ~/.buildplaybook/projects/"
 
+# ─────────────────────────────────────
+# Phase 9: Persistent Memory Layer
+# ─────────────────────────────────────
+echo ""
+echo "Installing Supermemory MCP (persistent memory)..."
+if command -v npx &>/dev/null; then
+  npx -y install-mcp@latest https://mcp.supermemory.ai/mcp --client claude --oauth=yes 2>/dev/null || {
+    echo "  Supermemory MCP install failed. Memory will use local-only mode."
+    echo "  Run manually: npx -y install-mcp@latest https://mcp.supermemory.ai/mcp --client claude --oauth=yes"
+  }
+  echo "  Supermemory MCP → persistent cross-session memory"
+else
+  echo "  npx not found. Skipping Supermemory MCP."
+fi
+
 echo ""
 echo "─────────────────────────────────────"
 echo "Build Playbook installed."
