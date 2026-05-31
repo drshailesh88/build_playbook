@@ -30,6 +30,26 @@
             "description": "Careful: warn before destructive commands"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/tmux-enforce.sh\"",
+            "description": "Tmux: warn when starting dev servers outside tmux"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/md-blocker.sh\"",
+            "description": "MD Blocker: prevent stray markdown outside designated directories"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -40,6 +60,37 @@
             "type": "command",
             "command": "bash \"$HOME/.buildplaybook/hooks/quality-gate.sh\"",
             "description": "Quality Gate: format + typecheck after every edit"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/console-log-check.sh\"",
+            "description": "Console Log: warn on console.log in production code"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/pr-url-logger.sh\"",
+            "description": "PR Logger: capture PR URLs to .planning/pr-log.md"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.buildplaybook/hooks/session-start.sh\"",
+            "description": "Load last session state + project learnings at session start"
           }
         ]
       }

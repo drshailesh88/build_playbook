@@ -14,6 +14,8 @@ mkdir -p "$LEARNINGS_DIR"
 
 # Save session state
 SESSION_FILE="$LEARNINGS_DIR/last-session.md"
+PREVIOUS_DECIDED=$(grep -o "DECIDED: [0-9]*" "$SESSION_FILE" 2>/dev/null | tail -1 | awk '{print $2}')
+PREVIOUS_DECIDED=${PREVIOUS_DECIDED:-0}
 cat > "$SESSION_FILE" <<EOF
 # Last Session State
 Updated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -29,10 +31,36 @@ $(cd "$PROJECT_DIR" 2>/dev/null && git status --short 2>/dev/null || echo "N/A")
 $(cd "$PROJECT_DIR" 2>/dev/null && git branch --show-current 2>/dev/null || echo "N/A")
 EOF
 
-# Check for planning decision artifacts
+# Extract lightweight learnings
+LEARNING_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+cd "$PROJECT_DIR" 2>/dev/null && git log --oneline --since='4 hours ago' --grep='fix' 2>/dev/null | while IFS= read -r COMMIT; do
+  CONTENT=$(printf '%s' "Recent fix commit: $COMMIT" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"pitfall\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.5}" >> "$LEARNINGS_DIR/learnings.jsonl"
+done
+
 PLANNING_DIR="$PROJECT_DIR/.planning"
+GRILL_LOG="$PLANNING_DIR/grill-log.md"
+if [ -f "$GRILL_LOG" ]; then
+  DECIDED=$(grep -c "Status: DECIDED" "$GRILL_LOG" 2>/dev/null || echo 0)
+  if [ "$DECIDED" -gt "$PREVIOUS_DECIDED" ]; then
+    NEW_DECIDED=$((DECIDED - PREVIOUS_DECIDED))
+    CONTENT=$(printf '%s' "$NEW_DECIDED new architecture decisions recorded in grill-log.md" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"architecture\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.6}" >> "$LEARNINGS_DIR/learnings.jsonl"
+  fi
+fi
+
+GATEGUARD_SESSION="$HOME/.gstack/gateguard/session-$(date +%Y%m%d).txt"
+if [ -f "$GATEGUARD_SESSION" ]; then
+  GATEGUARD_LINES=$(wc -l < "$GATEGUARD_SESSION" | tr -d ' ')
+  if [ "$GATEGUARD_LINES" -gt 0 ]; then
+    CONTENT=$(printf '%s' "GateGuard recorded $GATEGUARD_LINES investigation lines today" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    echo "{\"timestamp\":\"$LEARNING_TIMESTAMP\",\"type\":\"pattern\",\"content\":\"$CONTENT\",\"source\":\"session-auto\",\"confidence\":0.3}" >> "$LEARNINGS_DIR/learnings.jsonl"
+  fi
+fi
+
+# Check for planning decision artifacts
 if [ -d "$PLANNING_DIR" ]; then
-  GRILL_LOG="$PLANNING_DIR/grill-log.md"
   DECISION_INDEX="$PLANNING_DIR/decision-index.md"
   NEXT_DEC_ID_FILE="$PLANNING_DIR/next-dec-id"
 

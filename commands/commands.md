@@ -61,6 +61,7 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:security-audit` — 6-check OWASP security review
 - `/playbook:verify-with-codex` — Cross-model code review
 - `/playbook:where-am-i` — Where am I? What's next? (10 seconds)
+- `/playbook:doctor` — Health check for playbook hooks, deployment, CLIs, learnings, and MCP/tool counts
 
 ## The Flow
 

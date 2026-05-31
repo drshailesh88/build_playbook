@@ -18,11 +18,17 @@ Automatic runtime behaviors that fire at precise moments in the Claude Code life
 |------|---------|-------------|
 | **Quality Gate** | Edit/Write | Runs format check + typecheck on the edited file. Catches errors immediately. |
 
+### UserPromptSubmit (fires when the user submits a prompt)
+
+| Hook | Trigger | What it Does |
+|------|---------|-------------|
+| **Session Start** | Always | Loads last session state and recent project learnings once per session. |
+
 ### Stop (fires when Claude finishes responding)
 
 | Hook | Trigger | What it Does |
 |------|---------|-------------|
-| **Session End** | Always | Saves git state, modified files, and branch to `~/.buildplaybook/projects/`. |
+| **Session End** | Always | Saves git state, modified files, and branch to `~/.buildplaybook/projects/`, then extracts session learnings. |
 
 ## Installation
 
