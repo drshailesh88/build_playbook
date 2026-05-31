@@ -86,11 +86,15 @@ Never run Tier 1 modules in unattended/overnight mode. This is non-negotiable.
 
 ## Revert Protocol
 
-If a change causes ANY of these, revert immediately:
+If a change causes ANY of these, revert the files you touched in this iteration:
 
 ```bash
-git checkout -- . && git clean -fd
+# Revert only the files changed in this iteration (safe — preserves unrelated work)
+git checkout -- <files-you-edited>
+git clean -f <new-files-you-created>
 ```
+
+NEVER use `git checkout -- .` or `git clean -fd` — these nuke ALL uncommitted changes including unrelated work-in-progress. Scope reverts to exactly the files the current iteration touched.
 
 Triggers:
 - Build failure (`tsc --noEmit` exits non-zero)

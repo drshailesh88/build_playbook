@@ -1,7 +1,8 @@
 #!/bin/bash
-# Config Protection Hook (PreToolUse → Edit)
+# Config Protection + Phase Locking Hook (PreToolUse → Edit|Write)
 #
 # Prevents Claude from weakening linter/formatter/TypeScript configs.
+# Also enforces phase-based file locking during autoresearch improvement loops.
 # A classic agent failure mode: it "fixes" errors by loosening the rules.
 # This hook blocks that pattern.
 
@@ -9,7 +10,7 @@ INPUT=$(cat)
 
 TOOL_NAME=$(echo "$INPUT" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
 
-if [ "$TOOL_NAME" != "Edit" ]; then
+if [ "$TOOL_NAME" != "Edit" ] && [ "$TOOL_NAME" != "Write" ]; then
   exit 0
 fi
 
@@ -17,7 +18,7 @@ FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"
 FILE_NAME=$(basename "$FILE_PATH" 2>/dev/null)
 
 # Protected config files
-PROTECTED_CONFIGS="tsconfig.json .eslintrc .eslintrc.js .eslintrc.json eslint.config.js eslint.config.mjs .prettierrc .prettierrc.json prettier.config.js biome.json"
+PROTECTED_CONFIGS="tsconfig.json .eslintrc .eslintrc.js .eslintrc.json eslint.config.js eslint.config.mjs eslint.config.ts .prettierrc .prettierrc.json prettier.config.js biome.json vitest.config.ts vitest.config.js vitest.config.mjs playwright.config.ts playwright.config.js stryker.config.json stryker.conf.mjs stryker.conf.js"
 
 IS_PROTECTED=false
 for config in $PROTECTED_CONFIGS; do
@@ -29,12 +30,18 @@ done
 
 if [ "$IS_PROTECTED" = false ]; then
   # Phase-based file locking for autoresearch improvement loops
-  # Fast path: skip if no active lazy-dev state
+  # Fast path: skip if no active improvement state
   PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
   LAZY_STATE="$PROJECT_DIR/.quality/goals/lazy-dev-state.md"
+  GOAL_FILE="$PROJECT_DIR/.quality/goals/GOAL.md"
+  ACTIVE_PHASE=""
   if [ -f "$LAZY_STATE" ]; then
     ACTIVE_PHASE=$(grep "| in-progress |" "$LAZY_STATE" 2>/dev/null | head -1 | sed 's/.*| \([^ ]*\) |.*/\1/' | tr -d ' ')
-    if [ -n "$ACTIVE_PHASE" ]; then
+  fi
+  if [ -z "$ACTIVE_PHASE" ] && [ -f "$GOAL_FILE" ]; then
+    ACTIVE_PHASE=$(grep "score.sh" "$GOAL_FILE" 2>/dev/null | head -1 | grep -oE '[a-z][-a-z]*$')
+  fi
+  if [ -n "$ACTIVE_PHASE" ]; then
       case "$ACTIVE_PHASE" in
         coverage|mutation)
           # Test phase: block source edits
@@ -56,7 +63,6 @@ if [ "$IS_PROTECTED" = false ]; then
           ;;
       esac
     fi
-  fi
   exit 0
 fi
 

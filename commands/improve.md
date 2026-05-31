@@ -102,7 +102,7 @@ For each iteration:
 5. **Guard check**: Verify guard metrics haven't regressed
 6. **Decision**:
    - Improved + guards pass → `git add <files> && git commit -m "[S:OLD->NEW] component: what"`
-   - Regressed or guard failed → `git checkout -- . && git clean -fd`
+   - Regressed or guard failed → `git checkout -- <files-touched> && git clean -f <new-files-created>`
 7. **Log**: Append to `.quality/goals/iterations-<metric>-active.jsonl`
 8. **Stall check**: If 3 consecutive iterations < 0.5% improvement, stop
 

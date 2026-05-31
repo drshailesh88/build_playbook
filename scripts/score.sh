@@ -18,6 +18,12 @@
 
 set -o pipefail
 
+# Guard: refuse to run inside the Build Playbook repo itself (this is a template)
+if [ -f "$(dirname "$0")/../THE-PLAYBOOK.md" ] && [ -f "$(dirname "$0")/../ETHOS.md" ]; then
+  echo '{"score": 0, "max": 0, "unit": "error", "details": "This is a TEMPLATE. Copy score.sh to your project before running."}' >&2
+  exit 1
+fi
+
 METRIC="${1:?Usage: ./scripts/score.sh <metric-name>}"
 
 json_out() {
