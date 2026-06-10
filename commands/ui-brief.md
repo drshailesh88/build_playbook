@@ -32,6 +32,18 @@ Read these first:
 - `.planning/CONTEXT.md` — glossary terms already defined
 - `.planning/competition-research.md` — especially the Design Inspirations section with visual DNA
 - `.planning/ux-brief.md` — UX decisions that the visual language must support
+- `.planning/design.md` + `.planning/voice.md` — extracted design system (from `/design-extract`)
+
+**Extraction-first rule:** if `.planning/design.md` exists (produced by
+`/design-extract` from an inspiration site), do NOT interview the founder
+about anything the extraction already measured — fonts, colors, spacing,
+radius, shadows, motion, component anatomy are FACTS in that file, ratified
+by the founder there. This grill covers ONLY the deltas extraction cannot
+answer: brand assets and logo treatment, dark mode stance, density vs the
+app's data needs, accessibility floor, and anything in design.md's "What we
+deliberately do differently" section that needs expanding. If design.md does
+NOT exist and the founder has an inspiration site in mind, recommend running
+`/design-extract <url>` first — measuring beats remembering.
 
 ## Decision Record Format
 
