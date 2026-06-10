@@ -26,7 +26,6 @@ GAP (missing capability) · DEBT (works, but fragile) · QUESTION (unvalidated).
 | L-010 | QUESTION | spec-runner | extract-pathways says spec-runner generates Playwright from pathways.json — but the existing spec-runner skill predates pathways and reads census specs only. Integration unimplemented. | 2026-06-10 | Update spec-runner skill to prefer pathways.json when present (census remains fallback) |
 | L-011 | DEBT | versions | VPS claude 2.1.97 vs laptop 2.1.139+; behavior skew between orchestrator and floor (e.g., MCP OAuth, /goal availability). No version pinning or check anywhere. | 2026-06-10 | Witness or run.sh preflight: log claude/codex/grok versions per run; update VPS claude |
 | L-012 | GAP | escalation | ESCALATE parks and notifies, but there is no approval-with-timeout lane (ESCALATE.md semantics from DEC-009 item 3 were partially implemented: park+notify yes, timed approval window no). Acceptable for now — founder reviews via morning-review. | 2026-06-10 | Revisit if parked-story latency becomes the bottleneck |
-
 | L-013 | DEBT | vendor | Vendored Pocock skills predate his 2026-04-28 reorg: qa, design-an-interface, ubiquitous-language (folded into grill-with-docs), request-refactor-plan are deprecated upstream; github-triage renamed/reworked. Prune/upgrade pass needed (prototype replaces design-an-interface; watch his in-progress `review` skill — spec-faithfulness lens for our T2). | 2026-06-10 research | Prune after EventState ships; do not churn mid-project |
 
 ## Fixed
