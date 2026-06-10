@@ -138,13 +138,19 @@ run_grok_review() {
   local packet
   packet=$(build_packet ralph/reviewer-grok-prompt.md \
     'You are a SCOPE MINIMALIST reviewer. Audit spec-completeness vs the frozen contract and flag every decision or scope expansion the contract did not authorize.')
-  printf '%s' "$packet" \
-    | "${TCMD[@]}" grok -p "$(cat -)" \
-        ${GROK_MODEL:+--model "$GROK_MODEL"} \
-        --max-turns 15 \
-        --tools "read,grep,glob" \
-        --disable-web-search --no-subagents --no-memory \
-        2>&1 | parse_review
+  # Read-only via deny-list: --tools allow-lists break agent building in
+  # grok 0.2.39; denying the mutating tools is the supported path.
+  PACKET_FILE=$(mktemp)
+  printf '%s' "$packet" > "$PACKET_FILE"
+  "${TCMD[@]}" grok --prompt-file "$PACKET_FILE" \
+      ${GROK_MODEL:+--model "$GROK_MODEL"} \
+      --max-turns 15 \
+      --disallowed-tools "write,search_replace,run_terminal_cmd" \
+      --disable-web-search --no-subagents --no-memory \
+      2>&1 | parse_review
+  local rc=$?
+  rm -f "$PACKET_FILE"
+  return "$rc"
 }
 
 # ── Run requested lanes in parallel ──────────────────────────────────────────
