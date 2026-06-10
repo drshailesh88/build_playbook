@@ -37,6 +37,13 @@ CODEX_ACC1="${CODEX_ACC1:-$HOME/.codex-acc1}"
 CODEX_ACC2="${CODEX_ACC2:-$HOME/.codex-acc2}"
 CODEX_SINGLE_ACCOUNT="${CODEX_SINGLE_ACCOUNT:-0}"
 
+# Single-account fallback (lacuna L-001): boxes with one codex login keep
+# auth at ~/.codex, not ~/.codex-acc1. Use it rather than refusing to run.
+if [ ! -s "$CODEX_ACC1/auth.json" ] && [ -s "$HOME/.codex/auth.json" ]; then
+  CODEX_ACC1="$HOME/.codex"
+  CODEX_SINGLE_ACCOUNT=1
+fi
+
 # Quota / auth / transport detection
 QUOTA_REGEX='HTTP 429|rate.limit.exceeded|rate_limit_exceeded|quota.exceeded|quota_exceeded|usage.limit.exceeded|insufficient_quota|retry.after.*seconds|RESOURCE_EXHAUSTED|hit your usage limit|try again at [0-9]|billing.*hard.*limit|exceeded.*current.*quota'
 BOTH_EXHAUSTED_SLEEP=300   # 5 min

@@ -1,0 +1,40 @@
+# Factory Lacunae Ledger
+
+Standing assignment (2026-06-10): while EventState is built, every gap,
+friction point, or design flaw observed in the 5-phase factory or the wider
+playbook gets logged HERE — at the moment it's observed, not at retro time.
+The orchestrator (Claude) appends during sessions; `/morning-review`
+friction and shakedown findings land here too. Items graduate: fixed →
+moved to the Fixed section with the commit; promoted → becomes a DEC or a
+t0 rule.
+
+Severity: BLOCKER (factory cannot run) · DEFECT (wrong behavior) ·
+GAP (missing capability) · DEBT (works, but fragile) · QUESTION (unvalidated).
+
+## Open
+
+| # | Sev | Area | Lacuna | Found | Proposed fix |
+|---|-----|------|--------|-------|--------------|
+| L-002 | DEBT | judge.sh T1 | Never executed against a real Node project; test invocation assumes vitest CLI semantics (`npm run test:run -- <file> -t <name>`). Jest/playwright-only projects untested. | 2026-06-10 | Validate during EventState shakedown; make JUDGE_TEST_CMD project-customizable in scaffold step (it is env-overridable — document in scaffold) |
+| L-003 | GAP | VPS ops | Mobbin MCP headless: transport authed (✓ Connected) but tool call triggers app-level OAuth with localhost callback — headless runs can't complete it; interactive token didn't carry to `claude -p`. Observed live. | 2026-06-10 VPS test | Update VPS claude (2.1.97 → current) and re-test; until then all Mobbin work runs on laptop (DEC-032 already assumes this) |
+| L-004 | DEBT | VPS sizing | clawdbot has 7.5GB RAM; research floor for orchestration loads is 16GB; 8GB boxes observed OOM-killing Claude Code. MemoryMax=5G in ralph.service is a stopgap. | 2026-06-10 | Hetzner resize before first overnight run |
+| L-005 | GAP | deploy | Factory templates live only in the laptop playbook repo — no sync mechanism to VPS. scaffold-ralph resolves the playbook path locally; on the VPS there is no playbook checkout. | 2026-06-10 | Push playbook repo to GitHub (private) + clone on VPS; or rsync step in scaffold docs. Decide before scaffolding EventState |
+| L-006 | DEBT | qa.sh dual-account | Failover design assumes two Codex accounts; VPS has one. Long runs will hit the 5h window with no fallback — loop sleeps 5 min and retries (single-account path), burning wall-clock budget. | 2026-06-10 | Either add acc2 on VPS or tune BOTH_EXHAUSTED_SLEEP for single-account reality |
+| L-007 | GAP | gh-state | Stories appended later (completeness loop) get no GitHub issue until someone re-runs `gh-state.sh init`. run.sh never calls init. | 2026-06-10 design review | run.sh: call `gh-state.sh init` (idempotent) after pull, not just at scaffold time |
+| L-008 | DEBT | heartbeat | Only build.sh and qa.sh write `ralph/.heartbeat`; harden/quorum/drift phases run dark — Witness would mis-read a long harden phase as STALLED. | 2026-06-10 design review | Add heartbeat writes to harden.sh + review-quorum.sh batch loop, or Witness exempts phases per cursor |
+| L-009 | QUESTION | git flow | Factory commits straight to the target repo branch (Ralph style). Research consensus prefers small PRs for reviewability; current design has no PR lane, so /morning-review reads commits, not diffs-with-discussion. Intentional? | 2026-06-10 | Decide: keep direct-commit (fast, Ralph-pure) vs per-story branch+PR (reviewable, slower). Candidate DEC |
+| L-010 | QUESTION | spec-runner | extract-pathways says spec-runner generates Playwright from pathways.json — but the existing spec-runner skill predates pathways and reads census specs only. Integration unimplemented. | 2026-06-10 | Update spec-runner skill to prefer pathways.json when present (census remains fallback) |
+| L-011 | DEBT | versions | VPS claude 2.1.97 vs laptop 2.1.139+; behavior skew between orchestrator and floor (e.g., MCP OAuth, /goal availability). No version pinning or check anywhere. | 2026-06-10 | Witness or run.sh preflight: log claude/codex/grok versions per run; update VPS claude |
+| L-012 | GAP | escalation | ESCALATE parks and notifies, but there is no approval-with-timeout lane (ESCALATE.md semantics from DEC-009 item 3 were partially implemented: park+notify yes, timed approval window no). Acceptable for now — founder reviews via morning-review. | 2026-06-10 | Revisit if parked-story latency becomes the bottleneck |
+
+## Fixed
+
+| # | Lacuna | Fixed by |
+|---|--------|----------|
+| L-001 | qa.sh refused to run with single `~/.codex` login (clawdbot reality) | qa.sh single-account fallback, fixed same day |
+
+## Promotion rules
+
+- A lacuna observed twice in real runs is no longer a note — it gets fixed or becomes a DEC before the next run.
+- BLOCKERs stop the factory until fixed; nothing else does.
+- This file is reviewed at every `/morning-review` (factory-health section) and before every scaffold of a new project.
