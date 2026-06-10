@@ -11,3 +11,5 @@
 | DEC-007 | 2026-06-10 | No multi-agent fan-out (Gas Town) at this stage | REJECTED-OPTION / single-pipeline DECIDED | HIGH | EASY | SYSTEM | decisions/2026-06-10-software-factory-loop-engineering.md |
 | DEC-008 | 2026-06-10 | Behavior pathways layer between planning and testing | DECIDED | HIGH | EASY | SYSTEM | decisions/2026-06-10-software-factory-loop-engineering.md |
 | DEC-009 | 2026-06-10 | Adopt five field-research patterns into phase roadmap | DECIDED | HIGH | EASY | MODULE | decisions/2026-06-10-software-factory-loop-engineering.md |
+| DEC-010 | 2026-06-10 | Project #1 is a fresh rebuild with the old app as oracle | DECIDED | HIGH | MODERATE | SYSTEM | decisions/2026-06-10-rebuild-project-kickoff.md |
+| DEC-011 | 2026-06-10 | No separate calibration run — Tier-3-first stories, first run supervised | DECIDED | MEDIUM | EASY | LOCAL | decisions/2026-06-10-rebuild-project-kickoff.md |
