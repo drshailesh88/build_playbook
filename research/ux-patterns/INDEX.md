@@ -1,7 +1,10 @@
-# UX Pattern Library — Auth & Tenancy (Harvest 2026-06-10)
+# UX Pattern Library — Auth & Tenancy + External/SaaS-ification (Harvests 2026-06-10)
 
-Frozen Mobbin harvest: 147 pattern cards across 26 surfaces, swept by 7
-parallel agents (by-app / by-pattern / by-flow, loop-until-dry). Each
+Frozen Mobbin harvest, two rounds same day: round 1 = 147 cards across 26
+auth/tenancy surfaces (7 agents); round 2 = 72 cards across 7 surfaces for
+external-participant access and SaaS-ification (6 agents, scoped by oracle
+cross-check — see project ORACLE-CROSSCHECK-2026-06-10.md). All swept
+by-app / by-pattern / by-flow, loop-until-dry. Each
 surface directory has its own INDEX.md with per-surface coverage notes and
 the recommended default marked ★. Cards record OBSERVED patterns with
 mobbin.com refs only — no invented attributions, no binary content.
@@ -39,6 +42,24 @@ Reference apps targeted: Raycast, Linear, Slack, Notion, Vercel, Stripe
 | delete-org | 6 | type-org-name modal, itemized acknowledgement, email-code gate |
 | no-access-gate | 4 | request-access page, in-shell denial + switcher, 403 anti-floor |
 | revoked-mid-session | 3 | neutral takeover, in-shell denial + live switcher, eviction banner |
+
+### Round 2 — external participants + SaaS-ification
+
+| Surface | Cards | Theme |
+|---|---|---|
+| tokened-access-landing | 15 | RSVP accept/decline landing, magic-link conventions, expired/reused tokens, link-based forms, ticket/cert download (apps: Luma, Calendly, Partiful, Eventbrite + airline check-in) |
+| cross-tenant-deep-link | 8 | workspace router, tenant-scoped sign-in wall, identity-mismatch interstitial, masked not-found, in-context role upgrade |
+| zero-data-empty-states | 13 | checklist-hero dashboard, hollow widgets, single-action takeover, source-vs-derived emptiness, demo sandbox, filtered-vs-true empty |
+| first-run-onboarding | 11 | setup checklist + deferral, guided first-object wizard, template-vs-blank, role-aware split, celebration/retirement (tours = observed AVOID) |
+| import-wizard-sad-paths | 13 | partial-failure error file, revert window, batch tagging, bulk dedupe policy, sheet handling, import history, background completion |
+| multi-scope-settings-ia | 6 | scope-swapped chrome, breadcrumb scope tokens, parent-grants-override inheritance, in-resource settings entry |
+| comms-sender-setup | 6 | sender roster, DNS lifecycle + delegation helpers, send-test modal, readiness gates (WhatsApp/SMS: zero Mobbin coverage — vendor-docs work) |
+
+Round-2 coverage honesty (also in surface INDEXes): Tito/Doodle/Hopin/Splash
+absent from Mobbin; no reg#/phone identity gate before download; no silent
+auto-switch evidence; no restore-checklist-after-dismissal; no undo-countdown
+UI; no in-app import-completion toast (email-only everywhere); WhatsApp
+template approval states unobservable.
 
 ## Library-level coverage honesty
 
