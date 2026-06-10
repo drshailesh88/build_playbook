@@ -21,7 +21,7 @@ cat .planning/next-dec-id 2>/dev/null
 ```
 
 **DEC ID allocation:** Read `.planning/next-dec-id` for the next ID to
-assign. After each decision, increment the counter immediately. If the
+assign. After each decision, increment the counter immediately. **Allocate at WRITE time, never at session start** — parallel sessions race the counter (observed live 2026-06-10: two sessions both claimed DEC-076..081). Use the atomic helper when available: `<playbook>/scripts/next-dec.sh [count]` (mkdir-lock, prints the allocated id); otherwise read+increment the file in one step immediately before writing each record. If the
 file doesn't exist, create it. **Never derive IDs by scanning grill-log
 or decision-index** — parallel sessions would collide.
 

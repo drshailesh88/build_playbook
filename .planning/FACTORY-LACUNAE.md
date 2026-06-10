@@ -31,6 +31,7 @@ GAP (missing capability) · DEBT (works, but fragile) · QUESTION (unvalidated).
 | # | Lacuna | Fixed by |
 |---|--------|----------|
 | L-001 | qa.sh refused to run with single `~/.codex` login (clawdbot reality) | qa.sh single-account fallback, fixed same day |
+| L-014 | DEC counter race: two concurrent sessions (design-extract + pathways compile) both claimed DEC-076..081 — newer commands lacked grill-me's lock protocol and allocated at session start | scripts/next-dec.sh (atomic, shares grill-me's .planning/.dec-lock mutex, race-tested 6-way) + allocate-at-WRITE-time convention swept into 6 command files, same day |
 | L-005 | Factory templates had no path to the VPS | build_playbook pushed to GitHub (made PRIVATE — it had been public since May 31), cloned to ~/build_playbook on clawdbot, PLAYBOOK_ROOT exported, judge.sh verified present |
 | L-011 | claude version skew (VPS 2.1.97 vs laptop) | VPS updated to 2.1.170, /usr/local/bin symlink repointed; per-run version preflight still worth adding to run.sh later |
 
