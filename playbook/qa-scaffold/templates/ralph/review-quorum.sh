@@ -240,15 +240,48 @@ sys.exit(0 if quorum == 'APPROVED' else 2 if quorum == 'ESCALATE' else 1)
 PY
 RC=$?
 
-if [ "$RC" -ne 0 ] && [ -f "$OUT" ]; then
-  # Feed rejection back to the builder the same way the judge does.
+if [ "$RC" -eq 0 ]; then
+  # Approved: record locally and close out the story on GitHub.
+  python3 - "$SID" <<'PY'
+import json, sys
+d = json.load(open('ralph/prd.json'))
+for s in d:
+    if s.get('id') == sys.argv[1]:
+        s['quorum_approved'] = True
+json.dump(d, open('ralph/prd.json', 'w'), indent=2)
+PY
+  if [ -x ./ralph/gh-state.sh ]; then
+    ./ralph/gh-state.sh event "$SID" quorum-approved "$OUT" || true
+  fi
+elif [ -f "$OUT" ]; then
   SUMMARY=$(python3 -c "
 import json
 r = json.load(open('$OUT'))
-items = r['confirmed_findings'] + r['triage_findings']
+items = r.get('confirmed_findings', []) + r.get('triage_findings', [])
 print('; '.join(f\"[{f.get('severity','?')}] {f.get('claim','')[:100]}\" for f in items[:4]))")
   printf '\n%s — QUORUM %s %s: %s\n' "$(date +%F)" \
     "$([ "$RC" -eq 2 ] && echo ESCALATED || echo REJECTED)" "$SID" "$SUMMARY" \
     >> ralph/progress.txt
+  if [ "$RC" -eq 2 ]; then
+    # Reviewers disagree (or no usable verdict): a human decides. Park it.
+    if [ -x ./ralph/gh-state.sh ]; then
+      ./ralph/gh-state.sh escalate "$SID" "reviewer quorum disagreement — never auto-merge on conflict" "$OUT" || true
+    fi
+  else
+    # Rejected by both reviewers: send the story back through the build loop.
+    python3 - "$SID" <<'PY'
+import json, sys
+d = json.load(open('ralph/prd.json'))
+for s in d:
+    if s.get('id') == sys.argv[1]:
+        s['passes'] = False
+        s['qa_tested'] = False
+        s['quorum_approved'] = False
+json.dump(d, open('ralph/prd.json', 'w'), indent=2)
+PY
+    if [ -x ./ralph/gh-state.sh ]; then
+      ./ralph/gh-state.sh event "$SID" quorum-rejected "$OUT" || true
+    fi
+  fi
 fi
 exit "$RC"

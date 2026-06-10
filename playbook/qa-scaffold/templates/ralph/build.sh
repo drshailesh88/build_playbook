@@ -32,6 +32,15 @@ if [ -x ./ralph/freeze-contracts.sh ]; then
   ./ralph/freeze-contracts.sh
 fi
 
+# GitHub is the source of truth (DEC-004 Phase 3): sync issue labels into
+# prd.json flags before building — a human relabeling an issue on GitHub
+# re-queues or parks stories without touching the VPS.
+if [ -x ./ralph/gh-state.sh ]; then
+  ./ralph/gh-state.sh pull || true
+fi
+
+JUDGE_MAX_FAILURES="${JUDGE_MAX_FAILURES:-3}"
+
 # Resolve timeout command (macOS ships without `timeout`; coreutils supplies `gtimeout`).
 if command -v timeout >/dev/null 2>&1; then
   TIMEOUT_CMD=(timeout "$ITER_TIMEOUT")
@@ -75,9 +84,17 @@ for i in $(seq 1 "$MAX_ITER"); do
     break
   fi
 
-  # Circuit breaker — record pre-iteration state
+  # Circuit breaker — record pre-iteration state. Parked (escalated) stories
+  # are skipped: the factory never blocks on a human decision.
   PASSES_BEFORE=$PASSES
-  CURRENT_STORY_ID=$(python3 -c "import json; d=json.load(open('$PRD')); print(next((x['id'] for x in d if not x.get('passes', False)), ''))")
+  CURRENT_STORY_ID=$(python3 -c "import json; d=json.load(open('$PRD')); print(next((x['id'] for x in d if not x.get('passes', False) and not x.get('parked', False)), ''))")
+  if [ -z "$CURRENT_STORY_ID" ]; then
+    echo "All unparked stories built — $REMAINING remaining are PARKED (escalated to human). Stopping build loop."
+    break
+  fi
+  if [ -x ./ralph/gh-state.sh ]; then
+    ./ralph/gh-state.sh cursor phase=build story="$CURRENT_STORY_ID" iteration="$i" >/dev/null 2>&1 || true
+  fi
   if [ "$CURRENT_STORY_ID" != "$LAST_STORY_ID" ]; then
     LAST_STORY_ID="$CURRENT_STORY_ID"
     SAME_STORY_START=$(date +%s)
@@ -104,7 +121,7 @@ PROGRESS: $PASSES/$TOTAL features passed
 Previous RALPH commits:
 $RECENT_COMMITS
 
-Build exactly ONE feature (the first passes:false entry), then commit and stop.
+Build exactly ONE feature (the first entry with passes:false and no parked:true — parked stories are escalated to a human, never touch them), then commit and stop.
 Output <promise>NEXT</promise> when done.
 Output <promise>COMPLETE</promise> only if ALL features pass.
 Output <promise>ABORT</promise> if you cannot proceed (explain why above the tag).")
@@ -145,7 +162,7 @@ Output <promise>ABORT</promise> if you cannot proceed (explain why above the tag
     set -e
     if [ "$JUDGE_EXIT" -ne 0 ]; then
       echo "[judge] $CURRENT_STORY_ID rejected (exit=$JUDGE_EXIT) — reverting passes flag"
-      python3 - "$CURRENT_STORY_ID" "$PRD" <<'PY'
+      FAILURES=$(python3 - "$CURRENT_STORY_ID" "$PRD" <<'PY'
 import json, sys
 sid, prd_path = sys.argv[1], sys.argv[2]
 d = json.load(open(prd_path))
@@ -153,8 +170,10 @@ for s in d:
     if s.get('id') == sid:
         s['passes'] = False
         s['judge_failures'] = s.get('judge_failures', 0) + 1
+        print(s['judge_failures'])
 json.dump(d, open(prd_path, 'w'), indent=2)
 PY
+)
       VERDICT_SUMMARY=$(python3 - "$CURRENT_STORY_ID" <<'PY'
 import json, sys
 try:
@@ -169,6 +188,17 @@ PY
 )
       printf '\n%s — JUDGE REJECTED %s: %s\n' "$(date +%F)" "$CURRENT_STORY_ID" "$VERDICT_SUMMARY" >> "$PROGRESS"
       PASSES_AFTER=$PASSES_BEFORE
+      if [ -x ./ralph/gh-state.sh ]; then
+        if [ "$JUDGE_EXIT" -eq 2 ]; then
+          ./ralph/gh-state.sh escalate "$CURRENT_STORY_ID" "judge T2 ESCALATE verdict" "ralph/verdicts/$CURRENT_STORY_ID.json" || true
+        elif [ "${FAILURES:-0}" -ge "$JUDGE_MAX_FAILURES" ]; then
+          ./ralph/gh-state.sh escalate "$CURRENT_STORY_ID" "judge rejected ${FAILURES}x (limit $JUDGE_MAX_FAILURES)" "ralph/verdicts/$CURRENT_STORY_ID.json" || true
+        else
+          ./ralph/gh-state.sh event "$CURRENT_STORY_ID" judge-rejected "ralph/verdicts/$CURRENT_STORY_ID.json" || true
+        fi
+      fi
+    elif [ -x ./ralph/gh-state.sh ]; then
+      ./ralph/gh-state.sh event "$CURRENT_STORY_ID" built "ralph/verdicts/$CURRENT_STORY_ID.json" || true
     fi
   fi
 

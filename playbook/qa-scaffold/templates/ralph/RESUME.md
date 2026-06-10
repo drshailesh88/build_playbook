@@ -6,6 +6,12 @@ page. In order.
 ## Quick status check
 
 ```bash
+# Where was the factory when it stopped (cursor from the pinned GitHub
+# tracking issue, falls back to ralph/loop-cursor.json offline) + parked list:
+./ralph/gh-state.sh recover
+```
+
+```bash
 # What story Ralph thinks it's on, and how long it's been running:
 ps -o pid,etime,pcpu,command -p $(pgrep -f "claude.*opus-4-6" | head -1) 2>/dev/null
 

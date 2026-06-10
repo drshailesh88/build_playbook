@@ -133,6 +133,12 @@ if [ "$BUILT" -eq 0 ]; then
   exit 0
 fi
 
+# GitHub is the source of truth (DEC-004 Phase 3) — sync before grading.
+if [ -x ./ralph/gh-state.sh ]; then
+  ./ralph/gh-state.sh pull || true
+fi
+JUDGE_MAX_FAILURES="${JUDGE_MAX_FAILURES:-3}"
+
 # Try a single codex account. Returns:
 #   0 success (output printed to stdout, LAST_PROVIDER set)
 #   1 quota/auth failure (try next layer)
@@ -235,8 +241,11 @@ import json
 prd = json.load(open('$PRD'))
 report = json.load(open('$QA_REPORT'))
 done = {e.get('story_id') for e in report}
-print(next((x['id'] for x in prd if x.get('passes') and x.get('id') not in done), ''))
+print(next((x['id'] for x in prd if x.get('passes') and not x.get('parked') and x.get('id') not in done), ''))
 ")
+  if [ -n "$CANDIDATE" ] && [ -x ./ralph/gh-state.sh ]; then
+    ./ralph/gh-state.sh cursor phase=qa story="$CANDIDATE" iteration="$i" >/dev/null 2>&1 || true
+  fi
   if [ -n "$CANDIDATE" ] && [ -x ./ralph/judge.sh ]; then
     set +e
     JUDGE_TIERS="${QA_JUDGE_TIERS:-t0,t1,t2}" ./ralph/judge.sh "$CANDIDATE"
@@ -247,7 +256,7 @@ print(next((x['id'] for x in prd if x.get('passes') and x.get('id') not in done)
       LABEL="REJECTED"
       [ "$JUDGE_EXIT" -eq 2 ] && LABEL="ESCALATED (human decision needed)"
       echo "[judge] $CANDIDATE $LABEL — returning story to build loop"
-      python3 - "$CANDIDATE" "$PRD" <<'PY'
+      FAILURES=$(python3 - "$CANDIDATE" "$PRD" <<'PY'
 import json, sys
 sid, prd_path = sys.argv[1], sys.argv[2]
 d = json.load(open(prd_path))
@@ -255,10 +264,21 @@ for s in d:
     if s.get('id') == sid:
         s['passes'] = False
         s['judge_failures'] = s.get('judge_failures', 0) + 1
+        print(s['judge_failures'])
 json.dump(d, open(prd_path, 'w'), indent=2)
 PY
+)
       printf '\n%s — JUDGE %s %s pre-QA (see ralph/verdicts/%s.json)\n' \
         "$(date +%F)" "$LABEL" "$CANDIDATE" "$CANDIDATE" >> "$QA_PROGRESS"
+      if [ -x ./ralph/gh-state.sh ]; then
+        if [ "$JUDGE_EXIT" -eq 2 ]; then
+          ./ralph/gh-state.sh escalate "$CANDIDATE" "judge T2 ESCALATE verdict pre-QA" "ralph/verdicts/$CANDIDATE.json" || true
+        elif [ "${FAILURES:-0}" -ge "$JUDGE_MAX_FAILURES" ]; then
+          ./ralph/gh-state.sh escalate "$CANDIDATE" "judge rejected ${FAILURES}x (limit $JUDGE_MAX_FAILURES)" "ralph/verdicts/$CANDIDATE.json" || true
+        else
+          ./ralph/gh-state.sh event "$CANDIDATE" judge-rejected "ralph/verdicts/$CANDIDATE.json" || true
+        fi
+      fi
       continue
     fi
   fi
@@ -322,6 +342,10 @@ Output <promise>ABORT</promise> if blocked (explain why above the tag)."
   QAD_AFTER=$(count_qad)
   if [ "$QAD_AFTER" -gt "$QAD_BEFORE" ]; then
     CONSECUTIVE_NO_QA=0
+    if [ -n "${CANDIDATE:-}" ] && [ -x ./ralph/gh-state.sh ]; then
+      QA_PASSED=$(python3 -c "import json; d=json.load(open('$PRD')); print('yes' if any(x.get('id')=='$CANDIDATE' and x.get('qa_tested') for x in d) else 'no')")
+      [ "$QA_PASSED" = "yes" ] && { ./ralph/gh-state.sh event "$CANDIDATE" qa-passed "$QA_REPORT" || true; }
+    fi
   else
     CONSECUTIVE_NO_QA=$((CONSECUTIVE_NO_QA + 1))
     echo "[circuit-breaker] no new QA'd stories this iteration (consecutive: $CONSECUTIVE_NO_QA/$MAX_CONSECUTIVE_NO_QA)"

@@ -87,6 +87,12 @@ if [ -x ./ralph/freeze-contracts.sh ]; then
   ./ralph/freeze-contracts.sh 2>&1 | tee -a "$LOG"
 fi
 
+# GitHub source of truth (DEC-004 Phase 3): sync issue state in, mark the run.
+if [ -x ./ralph/gh-state.sh ]; then
+  ./ralph/gh-state.sh pull 2>&1 | tee -a "$LOG" || true
+  ./ralph/gh-state.sh cursor phase=build run_id="$TS" iteration=0 >/dev/null 2>&1 || true
+fi
+
 # Phases 1+2: Build ↔ QA bounce loop (DEC-004). The QA loop's judge gate can
 # reject stories back to passes:false; a bounce round sends them through the
 # build loop again with the judge verdict as feedback.
@@ -220,6 +226,12 @@ if [ "$HARDEN_EXIT" -ne 0 ] && [ "$HARDEN_EXIT" -ne 255 ]; then
 fi
 echo "Release gate: /playbook:qa-run  (runs release gates, produces summary.md)"
 echo "───────────────────────────────────────────────────────────────"
+
+# Close out the run on the tracking issue (crash recovery reads this cursor).
+if [ -x ./ralph/gh-state.sh ]; then
+  ./ralph/gh-state.sh cursor phase=idle story= iteration=0 >/dev/null 2>&1 || true
+  ./ralph/gh-state.sh note "**Run $TS finished.** $SUMMARY (build exit $BUILD_EXIT, qa exit $QA_EXIT, harden exit $HARDEN_EXIT)" || true
+fi
 
 # macOS notification (silent no-op on other platforms)
 if command -v osascript >/dev/null 2>&1; then
