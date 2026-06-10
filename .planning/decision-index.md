@@ -9,3 +9,5 @@
 | DEC-005 | 2026-06-10 | Frozen story contracts (hash-verified) | DECIDED | HIGH | EASY | MODULE | decisions/2026-06-10-software-factory-loop-engineering.md |
 | DEC-006 | 2026-06-10 | Decision firewall in execution | DECIDED | MEDIUM | EASY | MODULE | decisions/2026-06-10-software-factory-loop-engineering.md |
 | DEC-007 | 2026-06-10 | No multi-agent fan-out (Gas Town) at this stage | REJECTED-OPTION / single-pipeline DECIDED | HIGH | EASY | SYSTEM | decisions/2026-06-10-software-factory-loop-engineering.md |
+| DEC-008 | 2026-06-10 | Behavior pathways layer between planning and testing | DECIDED | HIGH | EASY | SYSTEM | decisions/2026-06-10-software-factory-loop-engineering.md |
+| DEC-009 | 2026-06-10 | Adopt five field-research patterns into phase roadmap | DECIDED | HIGH | EASY | MODULE | decisions/2026-06-10-software-factory-loop-engineering.md |

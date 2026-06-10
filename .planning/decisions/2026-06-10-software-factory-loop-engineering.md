@@ -2,7 +2,7 @@
 **Date:** 2026-06-10
 **Source:** Claude Code (Fable 5) interactive planning session
 **Status:** captured
-**Decision range:** DEC-001 to DEC-007
+**Decision range:** DEC-001 to DEC-009
 
 ## Context
 
@@ -170,6 +170,46 @@ Grok appears nowhere in the repo; story contracts are not frozen.
   - Enables: focus on verification quality; bounded token spend
   - Constrains: throughput capped at one builder lane
   - Rollback plan: N/A (nothing built to undo)
+
+#### DEC-008: Behavior pathways layer between planning and testing
+- **Question:** Founder identified a second lossy compression: UX intent (causal chains — "when X, then Y, then these 3 things, then Z") dissolves when planning compiles into the build list (prd.json/issues/GSD), and Playwright tests at the end "just happen" from the census instead of from the plan. How do we carry behavioral intent through?
+- **Options Considered:**
+  1. Per-module pathway specs compiled from ux-brief/PRD/data-requirements BEFORE build, with PATH IDs, ordered observable assertions, mandatory sad branches, and a data-testid selector contract; Playwright derived from pathways
+  2. Richer acceptance criteria inside stories (still flattens ordering and cross-feature flows)
+  3. Better post-hoc census (still tests what got built, not what was planned)
+- **Selected:** Option 1 — `/extract-pathways` compiler producing `.planning/pathways/<module>.pathways.md` + `pathways.json`. Census-to-specs treats pathways as authoritative for planned behavior; the census remains the net for emergent features. prd-to-ralph injects PATH IDs into story verification anchors; spec-runner generates ordered Playwright tests from pathways.json; pathways are T0-locked during runs.
+- **Rationale:** Tests should be the plan's shadow. The pathway record preserves order, multiplicity ("these 3 things"), and sad branches — exactly what acceptance-criterion one-liners drop.
+- **Rejected:** Options 2 and 3 (both keep tests downstream of the build instead of downstream of the plan).
+- **Dependencies:** DEC-005 (same freeze discipline)
+- **Status:** DECIDED
+- **Confidence:** HIGH
+- **Reversibility:** EASY
+- **Scope-Risk:** SYSTEM
+- **Counterargument:** Pathway authoring adds a planning step per module; if it turns out founders skip it, fold extraction into /ux-brief itself.
+- **Valid Until:** indefinite
+- **Consequences:**
+  - Enables: intent-derived E2E tests; ordered behavioral verification; selector contract before code exists
+  - Constrains: ux-brief becomes a hard prerequisite for E2E generation
+  - Rollback plan: census-to-specs continues to work without pathways (degraded mode)
+
+#### DEC-009: Adopt five field-research patterns into the phase roadmap
+- **Question:** Which patterns from the 2026-06-10 loop-engineering field report (see research-artifacts/) get adopted, and where?
+- **Selected:**
+  1. **Test-file-touch tripwire** (ImpossibleBench): phase-aware T0 rule — during QA/harden phases ANY diff to test paths fails the story and logs a suspected-hack event → Phase 1 follow-up
+  2. **2-of-2 quorum semantics + lens assignment** (adversarial-review ecosystem): both-agree = auto-fix, single-reviewer finding = human-triage queue; Codex = runtime/skeptic lens, Grok = scope-drift/minimalist lens; size-scaled lens count; seven-attack-surface adversarial prompt → Phase 2
+  3. **ESCALATE.md-style escalation semantics**: triggers {uncaptured decision, contract mismatch, guard violation, budget 80%, 3x stall} → Slack with timeout → on timeout PARK story as GitHub issue and continue; never block the factory → Phase 3/4
+  4. **Witness liveness agent + systemd-over-tmux** (Yegge, VPS guides): cheap cron agent detecting stalled-but-alive loops; systemd user service (Restart=on-failure) wrapping tmux; 16GB RAM floor; spend caps OUTSIDE the agent (API-key limits, timeout(1)) → Phase 4
+  5. **Aggregate-drift audit** (governance-debt essay): controller-level cross-story diff of dependency manifests/schema/config vs the decision ledger — per-story checks cannot see accumulation; plus executable architecture rules (dependency-cruiser) as T0 invariants → Phase 5
+- **Also confirmed by research:** /goal usable only as a short bounded inner push (≤20 turns), never unattended (its turn limits are model-judged, not enforced); hash-frozen contracts and the T0→T2 ladder have NO published peer — directionally validated by ImpossibleBench (locked tests) and Croucher (deterministic gates before LLM judgment).
+- **Status:** DECIDED
+- **Confidence:** HIGH (patterns), MEDIUM (Grok lens — no published Grok-reviewer practice exists; mark experimental)
+- **Reversibility:** EASY
+- **Scope-Risk:** MODULE
+- **Valid Until:** 2027-06-10
+- **Consequences:**
+  - Enables: hack detection, bounded escalation, liveness coverage, cross-story drift detection
+  - Constrains: Phase 2-5 scope grows by these items
+  - Rollback plan: each item is independently removable
 
 ## Open Questions
 
