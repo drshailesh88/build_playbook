@@ -1,0 +1,7 @@
+# revoked-mid-session — pattern index
+
+**Coverage note.** Queries run — by-pattern: "access removed from workspace you have been logged out choose another workspace", "account deactivated by admin you no longer have access sign in to a different workspace", "you have been removed from this workspace screen" (final query returned only duplicates — surface swept dry). Apps swept: Slack, Grain, Charma, Framer, plus Strut/GitBook/Amie/Fibery/Current/Linear (returned delete-confirm screens, catalogued under delete-org). NOT found: a toast-then-redirect graceful eviction captured in the act (Mobbin stills can't show the realtime transition — toast-vs-takeover has no direct evidence; all observed end-states are full pages); Slack's desktop-app eviction-to-workspace-picker specifically (only the post-deletion web page surfaced); "your role changed" (downgrade-not-removal) mid-session messaging — no precedent found.
+
+- ★ `full-page-neutral-takeover.md` — replace the app with a neutral page stating what happened, who acted, and an exit; no stale tenant UI (Slack, Grain)
+- `in-shell-denial-with-switcher.md` — session survives, denial renders in place, org switcher is the one-click recovery (Framer) — co-recommended as the org-scoped branch of ★
+- `eviction-to-login-with-reason-banner.md` — session killed, reason banner carried onto the sign-in page (Charma) — for whole-account termination only
