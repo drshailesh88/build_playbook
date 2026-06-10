@@ -103,6 +103,12 @@ if [ -x ./ralph/gh-state.sh ]; then
   ./ralph/gh-state.sh cursor phase=build run_id="$TS" iteration=0 deadline="${RALPH_DEADLINE:-0}" >/dev/null 2>&1 || true
 fi
 
+# Aggregate-drift baseline (DEC-009): snapshot deps/schema/config so the
+# end-of-run audit can catch cross-story accumulation no per-story check sees.
+if [ -x ./ralph/drift-audit.sh ]; then
+  ./ralph/drift-audit.sh snapshot 2>&1 | tee -a "$LOG" || true
+fi
+
 # Phases 1+2: Build ↔ QA bounce loop (DEC-004). The QA loop's judge gate can
 # reject stories back to passes:false; a bounce round sends them through the
 # build loop again with the judge verdict as feedback.
@@ -182,6 +188,18 @@ else
   HARDEN_EXIT=255
 fi
 
+# Aggregate-drift audit (DEC-009): non-blocking; unattributed changes land
+# in drift-report.json and the tracking issue for /morning-review.
+DRIFT_EXIT=0
+if [ -x ./ralph/drift-audit.sh ]; then
+  echo ""
+  echo ">>> Drift audit (deps/schema/config vs run baseline)"
+  set +e
+  ./ralph/drift-audit.sh audit 2>&1 | tee -a "$LOG"
+  DRIFT_EXIT=${PIPESTATUS[0]}
+  set -e
+fi
+
 END_EPOCH=$(date +%s)
 DURATION=$((END_EPOCH - START_EPOCH))
 HOURS=$((DURATION / 3600))
@@ -221,6 +239,9 @@ if [ -n "$HARDEN_STATUS" ]; then
   SUMMARY="$SUMMARY, hardened $HARDEN_STATUS"
 fi
 SUMMARY="$SUMMARY in ${HOURS}h${MINUTES}m"
+if [ "$DRIFT_EXIT" -ne 0 ]; then
+  SUMMARY="$SUMMARY — DRIFT: unattributed dep/schema/config changes (see drift-report.json)"
+fi
 
 echo ""
 echo "───────────────────────────────────────────────────────────────"

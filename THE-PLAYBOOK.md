@@ -530,6 +530,14 @@ Back to Phase 5 for the next milestone, or Phase 1 for a new feature/project.
 | `/gsd:execute-phase N` | Building | Phase number | Built features |
 | `/gsd:quick "task"` | Small tasks | Task description | Quick fix |
 
+### Factory (AFK Loop — judge ladder, quorum, GitHub state)
+| Command | When | Input | Output |
+|---------|------|-------|--------|
+| `/extract-pathways` | After ux-brief + PRD, before build | Module name or nothing | `.planning/pathways/` — per-module behavior chains that Playwright tests derive from |
+| `/playbook:scaffold-ralph` | Once per target app | Flags | Full factory: loops + judge ladder + frozen contracts + quorum + gh-state + witness + systemd units |
+| `/morning-review` | The morning after an AFK run | `--since` optional | `ralph/morning/<date>.md` — escalations first, ratchet candidates, drift report |
+| `/promote-finding` | When morning-review shows a finding 2+ times | Check id or slug | A deterministic rule appended to `t0-rules.jsonl` (the ratchet) |
+
 ### Adversarial Build (Ralph Loop + GAN + Autoresearch)
 | Command | When | Input | Output |
 |---------|------|-------|--------|

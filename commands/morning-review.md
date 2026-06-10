@@ -84,11 +84,16 @@ Run duration vs budget, circuit-breaker events, witness events, judge
 rejection rate (rejections / stories), quorum disagreement rate.
 
 ## Ratchet candidates (Ethos #5 — every session leaves the system smarter)
-Any check or finding class that failed >= 2 times. For each, PROPOSE the
-promotion but do not apply it without approval:
+Any check or finding class that failed >= 2 times. For each, name it and
+point at the pipeline: `/promote-finding <check-id-or-slug>` runs the full
+investigate → verify → consult → apply promotion. Do not apply promotions
+inline here — morning-review proposes, promote-finding executes.
 - recurring T2/quorum finding → a concrete `ralph/t0-rules.jsonl` line
 - recurring T1 test failure pattern → a test or lint rule
 - recurring escalation cause → a contract-authoring fix in prd-to-ralph
+Also read `ralph/drift-report.json` (aggregate drift): every UNATTRIBUTED
+dep/schema/config change needs a decision — authorize it (capture a DEC,
+mention it in the story contract) or revert it.
 
 ## Comprehension debt check
 2-3 sentences: which shipped change should the founder actually READ today
