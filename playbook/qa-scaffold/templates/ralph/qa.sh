@@ -260,12 +260,16 @@ for i in $(seq 1 "$MAX_ITER"); do
   # Judge gate (DEC-004): run the full ladder — including the T2 semantic
   # judge — on the candidate story BEFORE spending grader tokens on it.
   # Rejected stories are handed back to the build loop (passes -> false).
-  CANDIDATE=$(python3 -c "
-import json
+  CANDIDATE=$(RALPH_UNATTENDED="${RALPH_UNATTENDED:-0}" python3 -c "
+import json, os
+unattended = os.environ.get('RALPH_UNATTENDED') == '1'
 prd = json.load(open('$PRD'))
 report = json.load(open('$QA_REPORT'))
 done = {e.get('story_id') for e in report}
-print(next((x['id'] for x in prd if x.get('passes') and not x.get('parked') and x.get('id') not in done), ''))
+print(next((x['id'] for x in prd
+            if x.get('passes') and not x.get('parked')
+            and not (unattended and x.get('hitl', False))
+            and x.get('id') not in done), ''))
 ")
   if [ -n "$CANDIDATE" ] && [ -x ./ralph/gh-state.sh ]; then
     ./ralph/gh-state.sh cursor phase=qa story="$CANDIDATE" iteration="$i" >/dev/null 2>&1 || true

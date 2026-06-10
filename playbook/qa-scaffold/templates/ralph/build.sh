@@ -103,11 +103,18 @@ for i in $(seq 1 "$MAX_ITER"); do
   fi
 
   # Circuit breaker — record pre-iteration state. Parked (escalated) stories
-  # are skipped: the factory never blocks on a human decision.
+  # are always skipped; hitl:true stories (Tier 1: auth/payments/data) are
+  # skipped only in unattended runs — they require a human watching.
   PASSES_BEFORE=$PASSES
-  CURRENT_STORY_ID=$(python3 -c "import json; d=json.load(open('$PRD')); print(next((x['id'] for x in d if not x.get('passes', False) and not x.get('parked', False)), ''))")
+  CURRENT_STORY_ID=$(RALPH_UNATTENDED="${RALPH_UNATTENDED:-0}" python3 -c "
+import json, os
+unattended = os.environ.get('RALPH_UNATTENDED') == '1'
+d = json.load(open('$PRD'))
+print(next((x['id'] for x in d
+            if not x.get('passes', False) and not x.get('parked', False)
+            and not (unattended and x.get('hitl', False))), ''))")
   if [ -z "$CURRENT_STORY_ID" ]; then
-    echo "All unparked stories built — $REMAINING remaining are PARKED (escalated to human). Stopping build loop."
+    echo "No eligible stories — $REMAINING remaining are parked or HITL-gated (RALPH_UNATTENDED=${RALPH_UNATTENDED:-0}). Stopping build loop."
     break
   fi
   if [ -x ./ralph/gh-state.sh ]; then

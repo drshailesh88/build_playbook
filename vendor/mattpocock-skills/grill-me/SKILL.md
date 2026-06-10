@@ -58,6 +58,14 @@ ls .planning/adrs/*.md 2>/dev/null
 ls UBIQUITOUS_LANGUAGE.md 2>/dev/null
 ```
 
+**Consult prior rejections (adapted from triage's `.out-of-scope/` ledger):**
+before grilling a topic, grep the decision index and grill log for REJECTED
+and SUPERSEDED records touching it. If the user proposes something already
+rejected, surface it immediately — "DEC-017 rejected this on [date] because
+[reason]. Has something changed, or does that rejection stand?" A rejection
+re-litigated unknowingly is decision leak; re-litigated knowingly it becomes
+a superseding DEC with the old ID referenced.
+
 ### 3. Codebase Grounding (if code exists)
 
 Before asking ANY questions, explore the existing codebase to ground the interrogation in reality, not abstraction. This prevents asking questions that the code already answers.
@@ -515,6 +523,10 @@ When a user's answer is too vague, use these patterns to extract precision:
 8. **The Anti-Feature Probe**: "What would you explicitly NOT want here? What would be over-engineering for V1?"
 
 9. **The Observation Probe**: "If we build this, what should we WATCH but NOT try to optimize? What metric would tell us this is going sideways even if the main success metric looks good?" This surfaces Goodhart indicators — metrics that stop being useful the moment you optimize for them.
+
+10. **The Codebase Probe** (brownfield only — adapted from grill-with-docs): when a codebase exists, verify statements against it BEFORE recording the decision. "Your code cancels entire Orders (`src/lib/actions/order.ts`), but you just said partial cancellation is possible — which is right?" Explore the code instead of asking when the code can answer; grill the user only where code and intent genuinely diverge. A decision recorded against a misremembered codebase is a defect with an ID.
+
+11. **The Glossary Challenge** (adapted from grill-with-docs): the moment a user's term conflicts with `.planning/CONTEXT.md` or `UBIQUITOUS_LANGUAGE.md`, stop and call it out — "You said 'account', but the glossary defines Customer and User as distinct. Which do you mean? Should the glossary change?" Never silently accept a term drift; either the statement bends to the glossary or the glossary is updated (and downstream DECs using the old term get flagged). Sharpen fuzzy umbrella words into canonical terms as they appear, not in a batch at the end.
 
 ## The Grill Log File Format
 

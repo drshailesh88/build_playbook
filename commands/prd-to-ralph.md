@@ -462,6 +462,18 @@ from the grill (`note`, `tactical`, `standard`, `deep`). Set the entry's
 
 If no backing DECs have a recorded tier: `"standard"`.
 
+#### 4o. The `hitl` field (adapted from Pocock's to-issues HITL/AFK split)
+
+Mechanical rule, no judgment: set `"hitl": true` when the story's
+`risk_domain` is `auth`, `payments`, or `tenant-isolation`, OR the story
+touches schema migrations on existing tables, OR any backing DEC is marked
+Tier 1 / supervised. Everything else: `"hitl": false`.
+
+The loops enforce it: `RALPH_UNATTENDED=1` (set by the systemd unit) makes
+build/QA skip `hitl:true` stories entirely — they wait for a supervised
+terminal session. This compiles the standing rule "never run Tier 1
+unattended" into the story itself instead of trusting prose.
+
 Each compiled prd.json entry MUST include these fields:
 
 ```json
@@ -482,7 +494,8 @@ Each compiled prd.json entry MUST include these fields:
   "external_prerequisites": "None",
   "valid_until": null,
   "dependencies": [],
-  "tier": "standard"
+  "tier": "standard",
+  "hitl": false
 }
 ```
 

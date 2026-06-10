@@ -25,6 +25,10 @@ WorkingDirectory=/home/claude/YOUR-APP
 ExecStart=/usr/bin/env bash -lc './ralph/run.sh'
 # CUSTOMIZE: per-run wall-clock budget in seconds (0 = no budget)
 Environment=RUN_BUDGET_SECONDS=28800
+# systemd runs are by definition unattended: hitl:true stories (Tier 1 —
+# auth, payments, tenant isolation) are skipped; build them in a supervised
+# terminal session where RALPH_UNATTENDED is unset.
+Environment=RALPH_UNATTENDED=1
 # Environment=NOTIFY_WEBHOOK=https://hooks.slack.com/services/...
 
 # Restart crashes (OOM, SIGKILL, segfault). NEVER restart deliberate stops:
