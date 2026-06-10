@@ -31,6 +31,7 @@ SLEEP_BETWEEN=3
 CONSECUTIVE_NO_QA=0
 MAX_CONSECUTIVE_NO_QA="${MAX_CONSECUTIVE_NO_QA:-3}"
 CIRCUIT_BREAKER_TRIGGERED=""
+JUDGE_REJECTED=0
 
 CODEX_ACC1="${CODEX_ACC1:-$HOME/.codex-acc1}"
 CODEX_ACC2="${CODEX_ACC2:-$HOME/.codex-acc2}"
@@ -226,6 +227,42 @@ for i in $(seq 1 "$MAX_ITER"); do
 
   RECENT_QA_COMMITS=$(git log --grep='^QA:' -n 10 --format='%H%n%ad%n%B---' --date=short 2>/dev/null || echo '(no QA commits yet)')
 
+  # Judge gate (DEC-004): run the full ladder — including the T2 semantic
+  # judge — on the candidate story BEFORE spending grader tokens on it.
+  # Rejected stories are handed back to the build loop (passes -> false).
+  CANDIDATE=$(python3 -c "
+import json
+prd = json.load(open('$PRD'))
+report = json.load(open('$QA_REPORT'))
+done = {e.get('story_id') for e in report}
+print(next((x['id'] for x in prd if x.get('passes') and x.get('id') not in done), ''))
+")
+  if [ -n "$CANDIDATE" ] && [ -x ./ralph/judge.sh ]; then
+    set +e
+    JUDGE_TIERS="${QA_JUDGE_TIERS:-t0,t1,t2}" ./ralph/judge.sh "$CANDIDATE"
+    JUDGE_EXIT=$?
+    set -e
+    if [ "$JUDGE_EXIT" -ne 0 ]; then
+      JUDGE_REJECTED=$((JUDGE_REJECTED + 1))
+      LABEL="REJECTED"
+      [ "$JUDGE_EXIT" -eq 2 ] && LABEL="ESCALATED (human decision needed)"
+      echo "[judge] $CANDIDATE $LABEL — returning story to build loop"
+      python3 - "$CANDIDATE" "$PRD" <<'PY'
+import json, sys
+sid, prd_path = sys.argv[1], sys.argv[2]
+d = json.load(open(prd_path))
+for s in d:
+    if s.get('id') == sid:
+        s['passes'] = False
+        s['judge_failures'] = s.get('judge_failures', 0) + 1
+json.dump(d, open(prd_path, 'w'), indent=2)
+PY
+      printf '\n%s — JUDGE %s %s pre-QA (see ralph/verdicts/%s.json)\n' \
+        "$(date +%F)" "$LABEL" "$CANDIDATE" "$CANDIDATE" >> "$QA_PROGRESS"
+      continue
+    fi
+  fi
+
   PROMPT="You are a DIFFERENT agent from the builder. Do not trust passes:true just because the builder said so.
 Read ralph/qa-prompt.md for your full instructions. Also read CLAUDE.md, $PRD, $QA_REPORT, and $QA_PROGRESS.
 
@@ -235,6 +272,7 @@ Previous QA commits:
 $RECENT_QA_COMMITS
 
 Pick the FIRST story in $PRD where passes:true AND no entry in $QA_REPORT has a matching story_id.
+(That story should be '$CANDIDATE' — it already passed the deterministic judge ladder; its verdict is at ralph/verdicts/$CANDIDATE.json and its frozen contract at ralph/contracts/$CANDIDATE.contract.md. Verify against the CONTRACT, not just the tests.)
 Verify it independently per ralph/qa-prompt.md: automated checks, manual acceptance, edge cases.
 Fix any bugs you find in PRODUCTION code only — never tests, never locked files.
 Append a structured entry to $QA_REPORT with qa_model set to \"codex\".
@@ -315,6 +353,7 @@ print(f"QA summary: {$FINAL_QAD}/{$BUILT} features QA'd")
 print(f'  bugs found:   {total_bugs}')
 print(f'  bugs fixed:   {fixed}')
 print(f'  status tally: {by_status}')
+print(f'  judge-rejected (returned to build): {$JUDGE_REJECTED}')
 print('───────────────────────────────────────────────────────────────')
 PY
 

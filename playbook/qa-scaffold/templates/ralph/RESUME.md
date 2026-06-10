@@ -111,6 +111,33 @@ Two args:
   assumes something false). Bring it to a human — write the diagnosis in
   `ralph/STUCK.md` and pause Ralph until resolved.
 
+## Judge rejections (story keeps flipping back to passes:false)
+
+The judge ladder (`ralph/judge.sh`) reverts a story's `passes` flag when a
+tier fails. Diagnose from the verdict, not the log:
+
+```bash
+# Why was the story rejected:
+python3 -m json.tool ralph/verdicts/<story-id>.json
+
+# How many times has it been rejected:
+python3 -c "import json; d=json.load(open('ralph/prd.json')); print(next(x.get('judge_failures',0) for x in d if x['id']=='<story-id>'))"
+```
+
+- **T0 failure** — an invariant broke (locked path touched, secret pattern,
+  contract hash mismatch). The builder cannot fix a contract mismatch; a
+  human must decide: restore the contract file (`git checkout -- ralph/contracts/`)
+  or sign a refreeze (`FREEZE_ACK=<id> ./ralph/freeze-contracts.sh --refreeze <id>`).
+- **T1 failure** — tests/tsc/lint. Normal; the builder retries with the
+  verdict as feedback. Worry only after 3 rejections.
+- **T2 ESCALATE** — the semantic judge found an unauthorized decision or a
+  contradictory contract. This is for YOU, not the loop. Read the verdict's
+  reasons, decide, then either fix the contract (refreeze) or add the
+  decision to `.planning/` and re-run.
+- **Recurring same-class rejection** — promote it: append a rule to
+  `ralph/t0-rules.jsonl` so the mistake becomes structurally impossible
+  (the ratchet rule).
+
 ## Known stall patterns
 
 - **Full Stryker baseline** (story cert-code-005-style) tends to OOM on a

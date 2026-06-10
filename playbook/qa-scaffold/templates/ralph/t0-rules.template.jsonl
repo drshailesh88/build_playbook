@@ -1,0 +1,20 @@
+# t0-rules.jsonl — deterministic T0 invariants for judge.sh (DEC-004)
+# Rename to t0-rules.jsonl after customizing. One JSON object per line.
+#
+# Rule types:
+#   locked-path     — fail if any story commit touched a path matching path_regex
+#   forbid-pattern  — fail if any changed file matching path_regex contains pattern
+#
+# THE RATCHET RULE: when the T2 LLM-judge (or a human reviewer) catches the
+# same class of mistake twice, append a rule here so it can never recur.
+# Rules are free, run in milliseconds, and never hallucinate.
+{"id": "locked-quality", "type": "locked-path", "path_regex": "^\\.quality/", "description": "Quality state, contracts, and evals are owner-controlled"}
+{"id": "locked-frozen-contracts", "type": "locked-path", "path_regex": "^ralph/contracts/", "description": "Frozen story contracts — refreeze requires FREEZE_ACK sign-off"}
+{"id": "locked-e2e-contracts", "type": "locked-path", "path_regex": "^e2e/contracts/", "description": "Locked acceptance contracts — code bends to contracts, never the reverse"}
+{"id": "locked-test-config", "type": "locked-path", "path_regex": "^(tsconfig\\.json|vitest\\.config\\.[^/]+|playwright\\.config\\.[^/]+|eslint\\.config\\.[^/]+)$", "description": "Build/test/lint config is frozen during runs"}
+{"id": "locked-claude-settings", "type": "locked-path", "path_regex": "^\\.claude/(settings\\.json|hooks/)", "description": "Agent permissions and hooks are owner-controlled"}
+{"id": "locked-ralph-machinery", "type": "locked-path", "path_regex": "^ralph/[^/]+\\.(sh|md)$", "description": "Loop scripts and prompt files are owner-controlled (contracts dir covered separately)"}
+{"id": "no-env-files", "type": "locked-path", "path_regex": "^\\.env(\\.local|\\.production|\\.development)?$", "description": "Secrets never enter version control"}
+{"id": "no-committed-secrets", "type": "forbid-pattern", "pattern": "(AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36})", "path_regex": ".", "description": "Credential material in changed files"}
+{"id": "no-focused-tests", "type": "forbid-pattern", "pattern": "\\b(it|test|describe)\\.only\\s*\\(", "path_regex": "\\.(test|spec)\\.[jt]sx?$", "description": ".only() silently disables the rest of the suite — a classic judge-gaming move"}
+{"id": "no-disabled-tests-without-issue", "type": "forbid-pattern", "pattern": "\\b(it|test|describe)\\.skip\\s*\\((?![^)]*#[0-9])", "path_regex": "\\.(test|spec)\\.[jt]sx?$", "description": "skip() without a linked issue number is test deletion in disguise"}

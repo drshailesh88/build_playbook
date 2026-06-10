@@ -26,6 +26,12 @@ if [ ! -f "$PRD" ]; then
   exit 1
 fi
 
+# Freeze success contracts BEFORE any building (DEC-005). Idempotent: only
+# unfrozen stories get contracts; existing contracts are never regenerated.
+if [ -x ./ralph/freeze-contracts.sh ]; then
+  ./ralph/freeze-contracts.sh
+fi
+
 # Resolve timeout command (macOS ships without `timeout`; coreutils supplies `gtimeout`).
 if command -v timeout >/dev/null 2>&1; then
   TIMEOUT_CMD=(timeout "$ITER_TIMEOUT")
@@ -126,8 +132,47 @@ Output <promise>ABORT</promise> if you cannot proceed (explain why above the tag
     echo "No promise tag found (exit=$CLAUDE_EXIT). Restarting iteration."
   fi
 
-  # Circuit breaker — check if passes count increased
   PASSES_AFTER=$(count_passes)
+
+  # Judge gate (DEC-004): the builder's passes:true claim only counts if the
+  # deterministic tiers agree. T2 (LLM judge) is deferred to the QA loop so
+  # the build loop stays fast and free. On rejection the flag is reverted and
+  # the verdict is fed to progress.txt for the next fresh-context retry.
+  if [ "$PASSES_AFTER" -gt "$PASSES_BEFORE" ] && [ -n "$CURRENT_STORY_ID" ] && [ -x ./ralph/judge.sh ]; then
+    set +e
+    JUDGE_TIERS="${BUILD_JUDGE_TIERS:-t0,t1}" ./ralph/judge.sh "$CURRENT_STORY_ID"
+    JUDGE_EXIT=$?
+    set -e
+    if [ "$JUDGE_EXIT" -ne 0 ]; then
+      echo "[judge] $CURRENT_STORY_ID rejected (exit=$JUDGE_EXIT) — reverting passes flag"
+      python3 - "$CURRENT_STORY_ID" "$PRD" <<'PY'
+import json, sys
+sid, prd_path = sys.argv[1], sys.argv[2]
+d = json.load(open(prd_path))
+for s in d:
+    if s.get('id') == sid:
+        s['passes'] = False
+        s['judge_failures'] = s.get('judge_failures', 0) + 1
+json.dump(d, open(prd_path, 'w'), indent=2)
+PY
+      VERDICT_SUMMARY=$(python3 - "$CURRENT_STORY_ID" <<'PY'
+import json, sys
+try:
+    v = json.load(open(f"ralph/verdicts/{sys.argv[1]}.json"))
+    fails = [f"{c['id']}: {c['detail'][:120]}"
+             for t in v.get('tiers', {}).values()
+             for c in t.get('checks', []) if not c['pass']]
+    print(f"failed tier {v.get('failed_tier')}: " + " | ".join(fails[:4]))
+except Exception:
+    print("(verdict unreadable)")
+PY
+)
+      printf '\n%s — JUDGE REJECTED %s: %s\n' "$(date +%F)" "$CURRENT_STORY_ID" "$VERDICT_SUMMARY" >> "$PROGRESS"
+      PASSES_AFTER=$PASSES_BEFORE
+    fi
+  fi
+
+  # Circuit breaker — check if passes count increased
   if [ "$PASSES_AFTER" -gt "$PASSES_BEFORE" ]; then
     CONSECUTIVE_NO_FLIP=0
     SAME_STORY_START=""

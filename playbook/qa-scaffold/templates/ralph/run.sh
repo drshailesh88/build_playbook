@@ -80,37 +80,66 @@ echo "  max iter:    build=$BUILD_ITERS, qa=$QA_ITERS, harden=$HARDEN_ITERS"
 echo "  skip:        build=$BUILD_SKIP, qa=$QA_SKIP, harden=$HARDEN_SKIP"
 echo ""
 
-# Phase 1: Build (Claude Opus)
-if [ "$BUILD_SKIP" = "1" ]; then
-  echo ">>> Phase 1/3: Build — SKIPPED (BUILD_SKIP=1)"
-  BUILD_EXIT=0
-else
-  echo ">>> Phase 1/3: Build (Claude Opus 4.6)"
-  echo ""
-  set +e
-  ./ralph/build.sh "$BUILD_ITERS" 2>&1 | tee "$LOG"
-  BUILD_EXIT=${PIPESTATUS[0]}
-  set -e
+# Freeze success contracts before any building (DEC-005). Idempotent: only
+# unfrozen stories get contracts; frozen contracts are never regenerated.
+touch "$LOG"
+if [ -x ./ralph/freeze-contracts.sh ]; then
+  ./ralph/freeze-contracts.sh 2>&1 | tee -a "$LOG"
 fi
 
-# Phase 2: QA (Codex) — only if build completed cleanly
-if [ "$QA_SKIP" = "1" ]; then
-  echo ""
-  echo ">>> Phase 2/3: QA — SKIPPED (QA_SKIP=1)"
-  QA_EXIT=0
-elif [ "$BUILD_EXIT" -eq 0 ]; then
+# Phases 1+2: Build ↔ QA bounce loop (DEC-004). The QA loop's judge gate can
+# reject stories back to passes:false; a bounce round sends them through the
+# build loop again with the judge verdict as feedback.
+MAX_BOUNCES="${RALPH_MAX_BOUNCES:-1}"
+ROUND=0
+BUILD_EXIT=0
+QA_EXIT=0
+while :; do
+  if [ "$BUILD_SKIP" = "1" ]; then
+    echo ">>> Phase 1/3: Build — SKIPPED (BUILD_SKIP=1)"
+    BUILD_EXIT=0
+  else
+    echo ">>> Phase 1/3: Build (Claude Opus 4.6) — round $((ROUND + 1))"
+    echo ""
+    set +e
+    ./ralph/build.sh "$BUILD_ITERS" 2>&1 | tee -a "$LOG"
+    BUILD_EXIT=${PIPESTATUS[0]}
+    set -e
+  fi
+
+  if [ "$QA_SKIP" = "1" ]; then
+    echo ""
+    echo ">>> Phase 2/3: QA — SKIPPED (QA_SKIP=1)"
+    QA_EXIT=0
+    break
+  elif [ "$BUILD_EXIT" -ne 0 ]; then
+    echo ""
+    echo "Build exited non-zero ($BUILD_EXIT). Skipping QA phase."
+    QA_EXIT=255
+    break
+  fi
+
   echo ""
   echo ">>> Phase 2/3: QA (Codex as independent evaluator)"
   echo ""
+  PASSES_BEFORE_QA=$(count_passes)
   set +e
   ./ralph/qa.sh "$QA_ITERS" 2>&1 | tee -a "$LOG"
   QA_EXIT=${PIPESTATUS[0]}
   set -e
-else
-  echo ""
-  echo "Build exited non-zero ($BUILD_EXIT). Skipping QA phase."
-  QA_EXIT=255
-fi
+  PASSES_AFTER_QA=$(count_passes)
+
+  if [ "$PASSES_AFTER_QA" -lt "$PASSES_BEFORE_QA" ] \
+     && [ "$ROUND" -lt "$MAX_BOUNCES" ] && [ "$BUILD_SKIP" != "1" ]; then
+    ROUND=$((ROUND + 1))
+    REJECTED=$((PASSES_BEFORE_QA - PASSES_AFTER_QA))
+    echo ""
+    echo ">>> Judge rejected $REJECTED stories during QA — bounce round $ROUND/$MAX_BOUNCES (builder retries with verdict feedback)"
+    echo ""
+    continue
+  fi
+  break
+done
 
 # Phase 3: Harden (Claude Sonnet) — only if QA completed cleanly
 if [ "$HARDEN_SKIP" = "1" ]; then
