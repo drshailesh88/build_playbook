@@ -1,0 +1,18 @@
+# ralph-witness.timer — run the Witness every 10 minutes
+#
+# Install:
+#   cp ralph/systemd/ralph-witness.* ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now ralph-witness.timer
+#   systemctl --user list-timers          # verify
+
+[Unit]
+Description=Run the Ralph witness every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

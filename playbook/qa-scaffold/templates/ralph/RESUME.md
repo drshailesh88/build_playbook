@@ -35,6 +35,8 @@ tail -30 "$(ls -t ralph/ralph-build-*.log | head -1)"
 | Untracked files appearing that aren't in the story's `behavior` | **Scope creep** — Ralph inventing helpers | Go to "Soft interrupt" + review files before restart. |
 | `exit 143` / `exit 137` in build log | Test runner killed (OOM, SIGKILL) | Story's spec needs a "partial-OK" ladder. See "Fix the spec" below. |
 | `<promise>ABORT</promise>` in output | Ralph correctly escalated | Read the diagnostic. Fix the blocker. Manually mark the story or rewrite its spec, then restart. |
+| `RUN BUDGET EXHAUSTED` (exit 4) | Wall-clock budget hit — deliberate stop, not a failure | Review progress (`/morning-review`), raise `RUN_BUDGET_SECONDS` or just start the next run. |
+| Witness posted STALLED/CRASHED | Watchdog caught a stuck or dead loop | `./ralph/gh-state.sh recover`, read `ralph/witness.log`, then soft/hard interrupt below. |
 
 ## Soft interrupt (let current iter finish, then pause)
 

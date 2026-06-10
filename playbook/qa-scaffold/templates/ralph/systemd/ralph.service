@@ -1,0 +1,44 @@
+# ralph.service — factory run as a systemd user service (DEC-002, DEC-009)
+#
+# Why systemd over bare tmux: tmux keeps a session alive, but after an OOM
+# kill you get a dead process in a live session. systemd restarts crashes —
+# and ONLY crashes: deliberate stops (ABORT, circuit breaker, budget) stay
+# stopped because those need a human, not a retry.
+#
+# Install (as the login user, no root):
+#   mkdir -p ~/.config/systemd/user
+#   cp ralph/systemd/ralph.service ~/.config/systemd/user/
+#   # CUSTOMIZE WorkingDirectory below, then:
+#   systemctl --user daemon-reload
+#   systemctl --user start ralph          # one run
+#   journalctl --user -u ralph -f         # watch
+#   loginctl enable-linger $USER          # keep user services running after logout
+
+[Unit]
+Description=Ralph factory run (build -> qa -> quorum -> harden)
+
+[Service]
+Type=simple
+# CUSTOMIZE: absolute path to the target app
+WorkingDirectory=/home/claude/YOUR-APP
+# Login shell so ~/.npm-global/bin, ~/.grok/bin etc. are on PATH
+ExecStart=/usr/bin/env bash -lc './ralph/run.sh'
+# CUSTOMIZE: per-run wall-clock budget in seconds (0 = no budget)
+Environment=RUN_BUDGET_SECONDS=28800
+# Environment=NOTIFY_WEBHOOK=https://hooks.slack.com/services/...
+
+# Restart crashes (OOM, SIGKILL, segfault). NEVER restart deliberate stops:
+#   exit 2 = agent ABORT (human needed)
+#   exit 3 = circuit breaker (agent stuck — retrying makes mistakes faster)
+#   exit 4 = run budget exhausted
+Restart=on-failure
+RestartSec=120
+RestartPreventExitStatus=2 3 4
+
+# Don't let one factory eat the box (CUSTOMIZE to your VPS size; research
+# floor for orchestration loads is 16GB total RAM)
+MemoryMax=5G
+TasksMax=512
+
+[Install]
+WantedBy=default.target

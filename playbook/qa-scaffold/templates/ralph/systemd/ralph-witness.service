@@ -1,0 +1,12 @@
+# ralph-witness.service — one Witness pass (paired with ralph-witness.timer)
+
+[Unit]
+Description=Ralph witness — liveness watchdog pass
+
+[Service]
+Type=oneshot
+# CUSTOMIZE: absolute path to the target app
+WorkingDirectory=/home/claude/YOUR-APP
+ExecStart=/usr/bin/env bash -lc './ralph/witness.sh'
+# Environment=NOTIFY_WEBHOOK=https://hooks.slack.com/services/...
+# Environment=WITNESS_AUTOKILL=1

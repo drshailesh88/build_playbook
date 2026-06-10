@@ -231,6 +231,23 @@ for i in $(seq 1 "$MAX_ITER"); do
     break
   fi
 
+  # Hard run budget (Phase 4) — same semantics as build.sh, exit 4.
+  if [ -n "${RALPH_DEADLINE:-}" ]; then
+    NOW=$(date +%s)
+    if [ "$NOW" -ge "$RALPH_DEADLINE" ]; then
+      echo "RUN BUDGET EXHAUSTED — stopping cleanly at iteration boundary." >&2
+      exit 4
+    fi
+    if [ -n "${RALPH_RUN_START:-}" ] && [ ! -f ralph/.budget-warned ] \
+       && [ $(( (NOW - RALPH_RUN_START) * 5 )) -ge $(( (RALPH_DEADLINE - RALPH_RUN_START) * 4 )) ]; then
+      touch ralph/.budget-warned
+      echo "[budget] 80% of run budget consumed"
+      [ -x ./ralph/gh-state.sh ] && { ./ralph/gh-state.sh note "**Budget warning:** 80% of run budget consumed." || true; }
+      [ -n "${NOTIFY_WEBHOOK:-}" ] && curl -s -X POST "$NOTIFY_WEBHOOK" -H "Content-Type: application/json" \
+        -d '{"text":"[ralph] 80% of run budget consumed"}' >/dev/null 2>&1 || true
+    fi
+  fi
+
   RECENT_QA_COMMITS=$(git log --grep='^QA:' -n 10 --format='%H%n%ad%n%B---' --date=short 2>/dev/null || echo '(no QA commits yet)')
 
   # Judge gate (DEC-004): run the full ladder — including the T2 semantic
@@ -246,6 +263,8 @@ print(next((x['id'] for x in prd if x.get('passes') and not x.get('parked') and 
   if [ -n "$CANDIDATE" ] && [ -x ./ralph/gh-state.sh ]; then
     ./ralph/gh-state.sh cursor phase=qa story="$CANDIDATE" iteration="$i" >/dev/null 2>&1 || true
   fi
+  printf '{"phase":"qa","story":"%s","iteration":%s,"ts":"%s"}\n' \
+    "${CANDIDATE:-}" "$i" "$(date -u +%FT%TZ)" > ralph/.heartbeat
   if [ -n "$CANDIDATE" ] && [ -x ./ralph/judge.sh ]; then
     set +e
     JUDGE_TIERS="${QA_JUDGE_TIERS:-t0,t1,t2}" ./ralph/judge.sh "$CANDIDATE"

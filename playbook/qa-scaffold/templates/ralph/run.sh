@@ -87,10 +87,20 @@ if [ -x ./ralph/freeze-contracts.sh ]; then
   ./ralph/freeze-contracts.sh 2>&1 | tee -a "$LOG"
 fi
 
+# Hard run budget (Phase 4): wall-clock cap enforced by the loops at
+# iteration boundaries — outside the agent, where it cannot be negotiated.
+RUN_BUDGET_SECONDS="${RUN_BUDGET_SECONDS:-0}"
+rm -f ralph/.budget-warned
+if [ "$RUN_BUDGET_SECONDS" -gt 0 ]; then
+  export RALPH_RUN_START="$START_EPOCH"
+  export RALPH_DEADLINE=$((START_EPOCH + RUN_BUDGET_SECONDS))
+  echo "  budget:      ${RUN_BUDGET_SECONDS}s wall-clock (hard stop at iteration boundaries, exit 4)"
+fi
+
 # GitHub source of truth (DEC-004 Phase 3): sync issue state in, mark the run.
 if [ -x ./ralph/gh-state.sh ]; then
   ./ralph/gh-state.sh pull 2>&1 | tee -a "$LOG" || true
-  ./ralph/gh-state.sh cursor phase=build run_id="$TS" iteration=0 >/dev/null 2>&1 || true
+  ./ralph/gh-state.sh cursor phase=build run_id="$TS" iteration=0 deadline="${RALPH_DEADLINE:-0}" >/dev/null 2>&1 || true
 fi
 
 # Phases 1+2: Build ↔ QA bounce loop (DEC-004). The QA loop's judge gate can

@@ -84,6 +84,24 @@ for i in $(seq 1 "$MAX_ITER"); do
     break
   fi
 
+  # Hard run budget (Phase 4) — checked at iteration boundaries, outside the
+  # agent. exit 4 is deliberate: systemd's RestartPreventExitStatus honors it.
+  if [ -n "${RALPH_DEADLINE:-}" ]; then
+    NOW=$(date +%s)
+    if [ "$NOW" -ge "$RALPH_DEADLINE" ]; then
+      echo "RUN BUDGET EXHAUSTED — stopping cleanly at iteration boundary." >&2
+      exit 4
+    fi
+    if [ -n "${RALPH_RUN_START:-}" ] && [ ! -f ralph/.budget-warned ] \
+       && [ $(( (NOW - RALPH_RUN_START) * 5 )) -ge $(( (RALPH_DEADLINE - RALPH_RUN_START) * 4 )) ]; then
+      touch ralph/.budget-warned
+      echo "[budget] 80% of run budget consumed"
+      [ -x ./ralph/gh-state.sh ] && { ./ralph/gh-state.sh note "**Budget warning:** 80% of run budget consumed." || true; }
+      [ -n "${NOTIFY_WEBHOOK:-}" ] && curl -s -X POST "$NOTIFY_WEBHOOK" -H "Content-Type: application/json" \
+        -d '{"text":"[ralph] 80% of run budget consumed"}' >/dev/null 2>&1 || true
+    fi
+  fi
+
   # Circuit breaker — record pre-iteration state. Parked (escalated) stories
   # are skipped: the factory never blocks on a human decision.
   PASSES_BEFORE=$PASSES
@@ -95,6 +113,8 @@ for i in $(seq 1 "$MAX_ITER"); do
   if [ -x ./ralph/gh-state.sh ]; then
     ./ralph/gh-state.sh cursor phase=build story="$CURRENT_STORY_ID" iteration="$i" >/dev/null 2>&1 || true
   fi
+  printf '{"phase":"build","story":"%s","iteration":%s,"ts":"%s"}\n' \
+    "$CURRENT_STORY_ID" "$i" "$(date -u +%FT%TZ)" > ralph/.heartbeat
   if [ "$CURRENT_STORY_ID" != "$LAST_STORY_ID" ]; then
     LAST_STORY_ID="$CURRENT_STORY_ID"
     SAME_STORY_START=$(date +%s)
