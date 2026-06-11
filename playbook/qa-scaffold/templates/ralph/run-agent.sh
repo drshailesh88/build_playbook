@@ -72,7 +72,7 @@ case "$VENDOR" in
     exec "${ARGS[@]}" < /dev/null
     ;;
   cursor)
-    ARGS=(cursor-agent -p --force)
+    ARGS=(cursor-agent -p --force --output-format text)
     [ -n "$MODEL" ] && ARGS+=(--model "$MODEL")
     ARGS+=("$PROMPT")
     ;;
