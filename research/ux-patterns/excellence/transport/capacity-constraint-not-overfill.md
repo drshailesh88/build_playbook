@@ -23,5 +23,13 @@ Ops genuinely needs to overfill (jump seat, child on lap) — then enforcement m
 ## Accessibility
 Not observable from documentation sources. Over-capacity signaled by color alone (legacy red count) fails WCAG 1.4.1 — pair with text ("14/12 over capacity").
 
+## Visual evidence (Mobbin re-sweep 2026-06-11) — STRONG
+Capacity-limit UI is screen-verified across 10 apps (full detail in `_raw/mobbin-resweep.md` §5):
+- Remaining count inside the control: eBay stepper captioned "5 available" (https://mobbin.com/screens/4d496fe4-1184-44a9-bf00-91ed0cce301d); Airbnb "Add a guest (9 left)" with commit disabled until valid — quiet enforcement, no error states (https://mobbin.com/screens/3c73932b-6170-4842-b034-68ec58896059).
+- Ceiling stated up front: Viator "This activity allows a maximum of 9 travelers." as the sheet's first line (https://mobbin.com/screens/4cf12848-6540-4d13-8701-49f3839a2f8a).
+- Three-state row treatment on schedule lists: Kakao T open / "매진임박" almost-sold-out (tappable) / "매진" sold-out greyed (https://mobbin.com/screens/8e3073a6-312c-4c38-9eec-aa061d6b28c0); Grab Bus & Ferry "159 of 159 seats left" X-of-Y meter on the trip card (https://mobbin.com/screens/6fc5ce3e-0ea9-493c-8410-482fc59fb16a).
+- Per-vehicle-section allocation: Shopee train "EKO-1 — 31 Seat(s) Available" per carriage + time-boxed hold countdown (https://mobbin.com/screens/0549d09a-3473-42dd-b414-02fdbdb7b423).
+- Blocked-at-limit recovery copy: Ticketmaster "Please Adjust Your Search — …due to the ticket quantity or filter you applied. Please try adjusting…" names both causes and both fixes (https://mobbin.com/screens/5bb4eaea-2cef-44f4-8135-3372e9d19508).
+
 ## Default verdict for our stack
-RECOMMENDED — legacy capacity was display-only (red count, server happily overfills). Steal: server-side check at assign/move with explicit override + audit, and over-capacity text not just color.
+RECOMMENDED — legacy capacity was display-only (red count, server happily overfills). Steal: server-side check at assign/move with explicit override + audit, X-of-Y text not just color, remaining-count-inside-the-control, and three-state capacity display. The override-with-audit CONFIRM dialog itself remains the named first-principles gap (no vendor doc and no Mobbin screen shows a manual hard-block-with-override).

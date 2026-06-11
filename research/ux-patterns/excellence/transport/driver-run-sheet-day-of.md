@@ -26,5 +26,12 @@ Drivers are untrusted third-party vendors who shouldn't see full passenger PII �
 ## Accessibility
 SMS-link delivery (Routific) means any phone works. Driver UIs are glanceable-by-design (large status buttons); not further observable from docs.
 
+## Visual evidence (Mobbin re-sweep 2026-06-11) — STRONG (single-app caveat)
+DoorDash Dasher is the only true gig-driver app on Mobbin (Uber Driver / Lyft Driver / Amazon Flex / Bolt Driver absent), but its coverage is deep; nav apps supply the stop-list anatomy (full detail in `_raw/mobbin-resweep.md` §3):
+- The run-sheet spine: "Current dash" ordered task list with per-stop deadlines ("Pick up for [name] — by 3:31 PM" tagged "Current task") — exactly one task current (https://mobbin.com/screens/5859ffb5-02a0-45ee-9065-2ea87eaf43fa).
+- Per-stop actions: name + call/text + "Directions" handoff, completion gated behind a verification CTA — the tap-to-board analog (https://mobbin.com/screens/8129d89c-6823-4706-b602-d76b35d72304).
+- Sad-path copy at the stop: waiting buffer ("Your on-time rate includes a buffer for extra time spent waiting"), ID checks, pickup instructions (https://mobbin.com/screens/5cb6f086-abb8-4751-874a-e2901cb238e3).
+- Stop list with projected arrivals + call-from-row + "End Route" terminator (Apple Maps, ADJACENT, https://mobbin.com/screens/e699f8a1-ab48-42a3-8ed2-3b4e6ca43401); lettered drag-to-reorder stops (Google Maps, ADJACENT).
+
 ## Default verdict for our stack
-RECOMMENDED — legacy had NOTHING driver-facing (done-spec #34 NEVER-ATTEMPTED). V1-honest version: tokened driver manifest web page per vehicle (passengers, phones, hubs, times) + printable trip sheet; status buttons can come later.
+RECOMMENDED — legacy had NOTHING driver-facing (done-spec #34 NEVER-ATTEMPTED). V1-honest version: tokened driver manifest web page per vehicle (passengers, phones, hubs, times) + printable trip sheet; status buttons can come later. The stop-row anatomy (deadline, current-task marker, call/navigate actions, waiting-state copy) is now screen-verified; the accept/decline loop remains vendor-doc-based (and is V2 anyway).

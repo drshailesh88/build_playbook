@@ -24,5 +24,13 @@ Details aren't stable yet — notifying off an unconfirmed suggestion teaches at
 ## Accessibility
 SMS-first design is itself the accessibility play — no app, no smartphone assumption (automated voice call documented as an Uber Central option).
 
+## Visual evidence (Mobbin re-sweep 2026-06-11) — STRONG
+Screen-level confirmation of the rider-facing surfaces (full detail in `_raw/mobbin-resweep.md` §1):
+- Arrived/nearby states with vehicle identity: Grab lock-screen Live Activity ("Driver has arrived" + plate + vehicle, https://mobbin.com/screens/9a700872-7aee-4cde-9fc4-17603d866cde); plate rendered as the LARGEST element at the arrived moment (https://mobbin.com/screens/f157d309-d94b-4750-96dd-74cc946b7cde); Bolt plate badge + color named in words (https://mobbin.com/screens/ba45f249-6dba-4711-86e3-0c06c07af24c).
+- No-show grace stated as a clock time: "Meet your driver by 6:48 PM to avoid extra fees or cancellation." (Grab, https://mobbin.com/screens/915e0c83-1168-4c7f-9dea-a7905123b483).
+- Wrong-car prevention: Uber ride PIN tiles + "I've arrived" self-report (https://mobbin.com/screens/d72a83f6-0ca5-4415-ad39-14f58c8bf092).
+- Static meeting-point page (the no-app trip-details shape): GetYourGuide — address + "Arrive by 15.45" + human-recognizable landmark instructions + cancellation sad path (ADJACENT, https://mobbin.com/screens/068c3193-5700-477c-a862-6dd863ee2238).
+- Delay notice: DoorDash old-vs-new time juxtaposition ("Original arrival time" inset box, ADJACENT, https://mobbin.com/screens/9e3be4f0-fbc1-4a10-9cd8-608569a9d4a6); "Estimated" vs "Latest arrival by" dual-time framing (Uber Eats web).
+
 ## Default verdict for our stack
-RECOMMENDED — legacy never sent a single transport notification (enum existed, zero sends). Steal the ladder shape, who-arranged-this context, driver-change re-send, and the explicit zero-trigger/no-contact rules.
+RECOMMENDED — legacy never sent a single transport notification (enum existed, zero sends). Steal the ladder shape, who-arranged-this context, driver-change re-send, and the explicit zero-trigger/no-contact rules. Message CONTENT anatomy (vehicle/plate prominence, clock-time grace, old-vs-new delay framing) is now screen-verified; the batch-send orchestration (when each rung fires) remains vendor-doc-based.

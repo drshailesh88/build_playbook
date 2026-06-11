@@ -24,5 +24,12 @@ Everything is flagged — a queue that's always full is a queue nobody reads; th
 ## Accessibility
 Not observable from documentation sources. Red-❗-only signaling fails WCAG 1.4.1 — keep the count + text reasons (the products do this too).
 
+## Visual evidence (Mobbin re-sweep 2026-06-11) — PARTIAL (adjacent-only)
+Fleet/dispatch consoles (Onfleet, Samsara, Motive, Bringg) are confirmed ABSENT from Mobbin — the dedicated fleet query returned only consumer tracking pages. The exception-QUEUE anatomy is screen-verified from adjacent ops domains (full detail in `_raw/mobbin-resweep.md` §4):
+- Counted queue as the homepage: Zendesk "Tickets requiring your attention (31)" table — status pills, priority grouping, assignee column (ADJACENT support ops, https://mobbin.com/screens/9a6a8c5d-5d9c-449c-a352-cd63bbe1d49d).
+- Exception states as named tabs with counts + one-line definition in the UI: Navan "Flagged — Transactions that require additional attention from an admin." (ADJACENT, https://mobbin.com/screens/06edd93a-1f54-496f-8632-20a56c50dba1); Fiverr "PRIORITY (1) / LATE" tabs with per-row timestamped notes (ADJACENT, https://mobbin.com/screens/461a5b79-0374-44cd-8d65-fd1043ec2e9f).
+- Severity escalation: Stripe ambient "Action required ⚠" badge → blocking banner with recovery path (ADJACENT, https://mobbin.com/screens/6d812512-d172-4e8d-8921-fe38ed18e434).
+- Cheapest variant: Overdue group pinned above This Week with red dates (Programa/Etsy, ADJACENT).
+
 ## Default verdict for our stack
-RECOMMENDED — this is the missing UI half of PATH-transport-004 (legacy wrote flags to DB, showed nothing). Indicator + count badge + "show flagged only" filter + reason detail = the documented industry shape.
+RECOMMENDED, re-tiered per adversarial review: the flag-as-overlay + counted-filterable-queue CAPABILITY is vendor-doc-proven (Limo Anywhere, Onfleet); the queue's SCREEN anatomy (counted tabs, status pills, severity escalation, overdue-first grouping) is screen-verified from adjacent ops consoles; the transport-board-specific composition is a first-principles design task anchored on both. This remains the missing UI half of PATH-transport-004.
