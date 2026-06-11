@@ -1,26 +1,38 @@
 #!/usr/bin/env python3
-"""Sync playbook commands into Codex (+ acc1) and pi skill dirs."""
-import os
+"""Sync ALL playbook commands into every installed agent's skill/command dir.
+
+Targets (skipped silently when the agent isn't installed on this machine):
+  SKILL.md-dir convention:  codex, codex-acc1, pi, grok, cursor
+  flat-file convention:     opencode (playbook-<name>.md, no namespacing)
+
+Runs on laptop and VPS alike — paths resolve relative to this script, not a
+hardcoded repo location. Re-run after adding/renaming commands; renamed
+commands leave a stale entry behind (clean those by adding the old name to
+TO_REMOVE).
+"""
+import re
 import shutil
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parent.parent
+PLAYBOOK_CMDS = REPO / "commands"
 HOME = Path.home()
-PLAYBOOK_CMDS = HOME / "Build Playbook" / "commands"
 
-AGENTS = {
+# SKILL.md convention: <skills_dir>/<name>/SKILL.md
+# Grok also auto-scans ~/.claude/skills and ~/.cursor/skills (compat mode),
+# and dedups by name with its own dir winning — syncing both is harmless.
+SKILL_AGENTS = {
     "codex": HOME / ".codex" / "skills",
     "codex-acc1": HOME / ".codex-acc1" / "skills",
     "pi": HOME / ".pi" / "agent" / "skills",
+    "grok": HOME / ".grok" / "skills",
+    "cursor": HOME / ".cursor" / "skills",
 }
 
-# OpenCode uses a FLAT command dir (single .md per command, no nested skill
-# folder). Frontmatter wants `description` only; no `name` field. Invoked as
-# /<name> in the TUI. No namespace support, so filenames use playbook-<name>
-# prefix to avoid colliding with OpenCode-native commands.
 OPENCODE_DIR = HOME / ".config" / "opencode" / "commands"
 OPENCODE_PREFIX = "playbook-"
 
-# Skills to remove from each agent (archived in playbook-archive).
+# Archived in playbook-archive — removed from every agent.
 TO_REMOVE = [
     "adversarial-claude-builds",
     "adversarial-claude-builds-v2",
@@ -40,101 +52,105 @@ TO_REMOVE = [
     "sprint-build-perfect-v2",
 ]
 
-# Playbook commands to ADD as skills. Each has a short description used in
-# SKILL.md frontmatter.
-TO_ADD = {
-    "author-locked-tests":        "Generate acceptance.spec.ts from a frozen contract under source-denied permissions (oracle independence). Use after /playbook:contract-pack freezes the contract and before the builder touches the feature.",
-    "classify-check":             "Verify every source file under src/, app/, lib/, components/, pages/ matches a tier glob in .quality/policies/tiers.yaml. Fail-fast per blueprint 6b.iii. Use in pre-push hooks and before qa-run.",
-    "classify-modules":           "Interactive tiers.yaml builder. Classifies modules into critical_75 / business_60 / ui_gates_only with service-hint suggestions. Sets unclassified_behavior:fail_fast.",
-    "contract-pack":              "Create frozen acceptance tests from spec BEFORE build. Independent oracle that the builder cannot edit. Prevents oracle contamination. The foundation of honest QA.",
-    "define-quality-contracts":   "Author ALL quality contracts BEFORE any source code exists. Chains contract-pack + author-locked-tests + initial tiers.yaml across every critical feature in one planning session. Oracle pure by construction.",
-    "gsd-to-linear":              "Push GSD REQUIREMENTS.md to Linear as agent-sized subtask issues with dependency mapping. One-way sync.",
-    "install-qa-harness":         "Scaffold qa/ + .quality/ into a target Next.js app. Detects services, writes policies, installs enforcement hooks, generates .env.test.example. Idempotent with --upgrade.",
-    "prd-to-linear":              "Skip GSD — break a PRD directly into agent-sized Linear issues with dependency mapping. Multi-agent shortcut.",
-    "prd-to-ralph":               "Convert PRD + grilling decisions into Huntley's exact prd.json format (flat array with id, category, description, page, ui_details, behavior, data_model, priority, core, passes, tests.{unit,e2e,edge_cases}). The input Ralph consumes.",
-    "qa-audit-violations":        "Aggregate .quality/runs/*/violations.jsonl across all runs by pattern. Surfaces which anti-cheat signatures fired most often.",
-    "qa-baseline":                "Populate module mutation baselines. Run once after install. Full Stryker + Vitest + Playwright.",
-    "qa-baseline-reset":          "Explicit ratchet-down with audit-log entry. Only way to lower a module's mutation baseline.",
-    "qa-clean":                   "Clear stale session locks + archive old runs' heavy artifacts (coverage/, stryker-tmp/).",
-    "qa-doctor":                  "Drift checks — deprecated commands, contract hashes, providers policy, tier coverage, detected services. Run before qa-run if state.json feels off.",
-    "qa-report":                  "List all runs or open a specific run's summary.md. Deterministic snapshot of what the QA pipeline saw.",
-    "qa-run":                     "Full QA session: preflight → lock → baseline → feature gates → release gates → summary + state delta. The ungameable judge. Runs every time the feature loop completes.",
-    "qa-status":                  "Current state.json snapshot + per-tier floor check. Fast read-only view of where every module stands against its mutation floor.",
-    "qa-unblock":                 "Reset a BLOCKED feature → pending + clear the plateau buffer. Use when a feature has stalled in the feature loop and needs a fresh attempt.",
-    "ralph-watch":                "Drop ralph/watch.sh + print Slack/Linear env var setup. Pure observer — never writes to files Ralph touches. Posts progress while build/QA runs.",
-    "scaffold-ralph":             "Drop adapted Ralph scripts (build.sh, qa.sh, run.sh) + prompt templates (build-prompt, qa-prompt) into target app's ralph/ dir. Do NOT download Huntley's raw scripts — they're product-cloning specific.",
-    "wire-selectors":             "Adjust data-testid selectors in acceptance.spec.ts to match the real DOM after the build phase. Assertions are locked by AST diff audit — selector-only changes.",
-}
+
+def derive_description(body: str, name: str) -> str:
+    """First prose paragraph after the H1; fall back to the H1 tail."""
+    lines = body.splitlines()
+    h1 = next((l for l in lines if l.startswith("# ")), f"# {name}")
+    paragraph: list[str] = []
+    seen_h1 = False
+    for line in lines:
+        if line.startswith("# ") and not seen_h1:
+            seen_h1 = True
+            continue
+        if not seen_h1:
+            continue
+        stripped = line.strip()
+        if stripped.startswith(("#", ">", "```", "---", "|", "**Provenance")):
+            if paragraph:
+                break
+            continue
+        if not stripped:
+            if paragraph:
+                break
+            continue
+        paragraph.append(stripped)
+    text = " ".join(paragraph) if paragraph else h1.lstrip("# ").strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return (text[:240] + "…") if len(text) > 240 else text
+
 
 def make_skill_md(name: str, description: str, body: str) -> str:
-    # Build SKILL.md with frontmatter. Keep description on one line.
-    desc_oneline = description.replace("\n", " ").replace('"', '\\"').strip()
-    return f'---\nname: {name}\ndescription: "{desc_oneline}"\n---\n\n{body}'
+    desc = description.replace('"', '\\"')
+    return f'---\nname: {name}\ndescription: "{desc}"\n---\n\n{body}'
 
-def sync_agent(agent_name: str, skills_dir: Path):
-    print(f"\n── {agent_name} @ {skills_dir} ──")
-    if not skills_dir.exists():
-        print(f"  skip: skills dir not found")
+
+def all_commands() -> dict[str, str]:
+    return {
+        p.stem: p.read_text()
+        for p in sorted(PLAYBOOK_CMDS.glob("*.md"))
+        if p.stem not in TO_REMOVE
+    }
+
+
+def sync_skill_agent(agent_name: str, skills_dir: Path, commands: dict[str, str]):
+    if not skills_dir.parent.exists():
+        print(f"── {agent_name}: not installed — skip")
         return
-
-    # Remove archived skills (handles both dirs and symlinks)
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    print(f"── {agent_name} @ {skills_dir}")
     for name in TO_REMOVE:
         target = skills_dir / name
         if target.is_symlink():
             target.unlink()
-            print(f"  rm:   {name} (symlink)")
         elif target.exists():
             shutil.rmtree(target)
-            print(f"  rm:   {name}")
-
-    # Add new skills from playbook commands
-    for name, description in TO_ADD.items():
-        cmd_path = PLAYBOOK_CMDS / f"{name}.md"
-        if not cmd_path.exists():
-            print(f"  MISS: {name}.md not in playbook — skipping")
-            continue
-        body = cmd_path.read_text()
+    added = updated = 0
+    for name, body in commands.items():
         skill_dir = skills_dir / name
-        # If an existing skill path is a symlink, replace it with a real dir
         if skill_dir.is_symlink():
             skill_dir.unlink()
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_md = skill_dir / "SKILL.md"
-        existed = skill_md.exists()
-        skill_md.write_text(make_skill_md(name, description, body))
-        print(f"  {'up:  ' if existed else 'add: '}{name}")
+        content = make_skill_md(name, derive_description(body, name), body)
+        if skill_md.exists():
+            if skill_md.read_text() != content:
+                skill_md.write_text(content)
+                updated += 1
+        else:
+            skill_md.write_text(content)
+            added += 1
+    print(f"   {added} added, {updated} updated, {len(commands)} total")
 
-def sync_opencode(commands_dir: Path):
-    print(f"\n── opencode @ {commands_dir} ──")
+
+def sync_opencode(commands_dir: Path, commands: dict[str, str]):
+    if not commands_dir.parent.exists():
+        print("── opencode: not installed — skip")
+        return
     commands_dir.mkdir(parents=True, exist_ok=True)
-
-    # Remove archived commands (playbook-<name>.md form).
+    print(f"── opencode @ {commands_dir}")
     for name in TO_REMOVE:
         target = commands_dir / f"{OPENCODE_PREFIX}{name}.md"
-        if target.is_symlink():
+        if target.exists() or target.is_symlink():
             target.unlink()
-            print(f"  rm:   {OPENCODE_PREFIX}{name} (symlink)")
-        elif target.exists():
-            target.unlink()
-            print(f"  rm:   {OPENCODE_PREFIX}{name}")
-
-    # Add new commands.
-    for name, description in TO_ADD.items():
-        cmd_path = PLAYBOOK_CMDS / f"{name}.md"
-        if not cmd_path.exists():
-            print(f"  MISS: {name}.md not in playbook — skipping")
-            continue
-        body = cmd_path.read_text()
-        desc_oneline = description.replace("\n", " ").replace('"', '\\"').strip()
-        content = f'---\ndescription: "{desc_oneline}"\n---\n\n{body}'
+    added = updated = 0
+    for name, body in commands.items():
+        desc = derive_description(body, name).replace('"', '\\"')
+        content = f'---\ndescription: "{desc}"\n---\n\n{body}'
         dst = commands_dir / f"{OPENCODE_PREFIX}{name}.md"
-        existed = dst.exists()
-        dst.write_text(content)
-        print(f"  {'up:  ' if existed else 'add: '}{OPENCODE_PREFIX}{name}")
+        if dst.exists():
+            if dst.read_text() != content:
+                dst.write_text(content)
+                updated += 1
+        else:
+            dst.write_text(content)
+            added += 1
+    print(f"   {added} added, {updated} updated, {len(commands)} total")
 
-for agent, path in AGENTS.items():
-    sync_agent(agent, path)
 
-sync_opencode(OPENCODE_DIR)
-
+commands = all_commands()
+print(f"{len(commands)} playbook commands from {PLAYBOOK_CMDS}\n")
+for agent, path in SKILL_AGENTS.items():
+    sync_skill_agent(agent, path, commands)
+sync_opencode(OPENCODE_DIR, commands)
 print("\nDone.")
