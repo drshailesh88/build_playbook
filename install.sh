@@ -1,123 +1,74 @@
 #!/bin/bash
-# Build Playbook — Global Install Script
-# Installs commands, skills, rules, agents, hooks, and references into ~/.claude/ and ~/.buildplaybook/
+# Build Playbook — multi-vendor install dispatcher
+# The methodology is vendor-neutral; this installs it into each agent CLI.
+#
+# Usage:
+#   ./install.sh                       # Claude Code only (original behavior)
+#   ./install.sh --target codex        # one vendor
+#   ./install.sh --target all          # every vendor with a CLI installed
+#   ./install.sh --target codex,grok   # comma-separated list
+#
+# Per-project setup (rules for Codex/Cursor/OpenCode/Grok via AGENTS.md):
+#   ./installers/init-project.sh /path/to/project
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLAUDE_DIR="$HOME/.claude"
-BP_DIR="$HOME/.buildplaybook"
+INSTALLERS="$SCRIPT_DIR/installers"
 
-echo "Installing Build Playbook..."
-echo ""
+TARGETS="claude"
+if [ "$1" = "--target" ] && [ -n "$2" ]; then
+  TARGETS="$2"
+elif [ -n "$1" ]; then
+  echo "Unknown argument: $1" >&2
+  echo "Usage: ./install.sh [--target claude|codex|cursor|opencode|grok|all]" >&2
+  exit 1
+fi
 
-# ─────────────────────────────────────
-# Phase 1: Commands
-# ─────────────────────────────────────
-mkdir -p "$CLAUDE_DIR/commands/playbook"
-# Remove stale symlinks before copying
-find "$CLAUDE_DIR/commands/playbook" -maxdepth 1 -type l -delete 2>/dev/null || true
-rsync -a --delete "$SCRIPT_DIR/commands/" "$CLAUDE_DIR/commands/playbook/"
-CMD_COUNT=$(ls "$SCRIPT_DIR/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "  $CMD_COUNT commands → ~/.claude/commands/playbook/"
+cli_for() {
+  case "$1" in
+    claude) echo "claude" ;;
+    codex) echo "codex" ;;
+    cursor) echo "cursor-agent" ;;
+    opencode) echo "opencode" ;;
+    grok) echo "grok" ;;
+  esac
+}
 
-# ─────────────────────────────────────
-# Phase 2: Custom Skills
-# ─────────────────────────────────────
-for skill in feature-census db-architect infra-architect verification-before-completion gateguard continuous-learning; do
-  if [ -d "$SCRIPT_DIR/skills/$skill" ]; then
-    mkdir -p "$CLAUDE_DIR/skills/$skill"
-    cp -r "$SCRIPT_DIR/skills/$skill/"* "$CLAUDE_DIR/skills/$skill/"
+if [ "$TARGETS" = "all" ]; then
+  TARGETS=""
+  for v in claude codex cursor opencode grok; do
+    if command -v "$(cli_for "$v")" >/dev/null 2>&1; then
+      TARGETS="$TARGETS $v"
+    else
+      echo "Skipping $v — $(cli_for "$v") not found on PATH"
+    fi
+  done
+fi
+
+FAILED=""
+for vendor in $(echo "$TARGETS" | tr ',' ' '); do
+  installer="$INSTALLERS/install-$vendor.sh"
+  if [ ! -f "$installer" ]; then
+    echo "No installer for '$vendor' (expected $installer)" >&2
+    FAILED="$FAILED $vendor"
+    continue
+  fi
+  echo ""
+  echo "═══ $vendor ═══"
+  if ! bash "$installer"; then
+    echo "FAILED: $vendor installer exited non-zero" >&2
+    FAILED="$FAILED $vendor"
   fi
 done
-cp "$SCRIPT_DIR/skills/founders-design-rules.md" "$CLAUDE_DIR/skills/" 2>/dev/null || true
-echo "  7 custom skills → ~/.claude/skills/"
-
-# ─────────────────────────────────────
-# Phase 3: Matt Pocock Skills
-# ─────────────────────────────────────
-if [ -d "$SCRIPT_DIR/vendor/mattpocock-skills" ]; then
-  for skill in "$SCRIPT_DIR/vendor/mattpocock-skills/"*/; do
-    skill_name=$(basename "$skill")
-    mkdir -p "$CLAUDE_DIR/skills/$skill_name"
-    cp -r "$skill"* "$CLAUDE_DIR/skills/$skill_name/"
-  done
-  echo "  10 Matt Pocock skills → ~/.claude/skills/"
-fi
-
-# ─────────────────────────────────────
-# Phase 4: Rules (always-loaded guidelines)
-# ─────────────────────────────────────
-mkdir -p "$CLAUDE_DIR/rules"
-cp "$SCRIPT_DIR/rules/"*.md "$CLAUDE_DIR/rules/"
-RULE_COUNT=$(ls "$SCRIPT_DIR/rules/"*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "  $RULE_COUNT rules → ~/.claude/rules/"
-
-# ─────────────────────────────────────
-# Phase 5: Agents (subagent delegation)
-# ─────────────────────────────────────
-mkdir -p "$CLAUDE_DIR/agents"
-cp "$SCRIPT_DIR/agents/"*.md "$CLAUDE_DIR/agents/"
-AGENT_COUNT=$(ls "$SCRIPT_DIR/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "  $AGENT_COUNT agents → ~/.claude/agents/"
-
-# ─────────────────────────────────────
-# Phase 6: Hooks (automatic runtime behaviors)
-# ─────────────────────────────────────
-mkdir -p "$BP_DIR/hooks"
-cp "$SCRIPT_DIR/hooks/scripts/"*.sh "$BP_DIR/hooks/"
-chmod +x "$BP_DIR/hooks/"*.sh
-HOOK_COUNT=$(ls "$SCRIPT_DIR/hooks/scripts/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-echo "  $HOOK_COUNT hooks → ~/.buildplaybook/hooks/"
-
-# Install hook configuration into Claude settings
-# Note: hooks.json is a reference. Users should merge into their .claude/settings.json
-cp "$SCRIPT_DIR/hooks/hooks.json" "$BP_DIR/hooks.json"
-echo "  hooks.json → ~/.buildplaybook/hooks.json"
-echo "  NOTE: Merge hooks.json into your project's .claude/settings.json to activate hooks"
-
-# ─────────────────────────────────────
-# Phase 7: Ethos + Reference Docs
-# ─────────────────────────────────────
-cp "$SCRIPT_DIR/ETHOS.md" "$CLAUDE_DIR/"
-cp "$SCRIPT_DIR/THE-PLAYBOOK.md" "$CLAUDE_DIR/"
-cp "$SCRIPT_DIR/WORKFLOW-REFERENCE.md" "$CLAUDE_DIR/"
-cp "$SCRIPT_DIR/MASTER-REPO-GUIDE.md" "$CLAUDE_DIR/"
-echo "  4 reference guides → ~/.claude/"
-
-# ─────────────────────────────────────
-# Phase 8: Initialize learnings directory
-# ─────────────────────────────────────
-mkdir -p "$BP_DIR/projects"
-echo "  learnings store → ~/.buildplaybook/projects/"
-
-# ─────────────────────────────────────
-# Phase 9: Persistent Memory Layer
-# ─────────────────────────────────────
-echo ""
-echo "Installing Supermemory MCP (persistent memory)..."
-if command -v npx &>/dev/null; then
-  npx -y install-mcp@latest https://mcp.supermemory.ai/mcp --client claude --oauth=yes 2>/dev/null || {
-    echo "  Supermemory MCP install failed. Memory will use local-only mode."
-    echo "  Run manually: npx -y install-mcp@latest https://mcp.supermemory.ai/mcp --client claude --oauth=yes"
-  }
-  echo "  Supermemory MCP → persistent cross-session memory"
-else
-  echo "  npx not found. Skipping Supermemory MCP."
-fi
 
 echo ""
 echo "─────────────────────────────────────"
-echo "Build Playbook installed."
-echo ""
-echo "  Commands:  $CMD_COUNT  (invoke with /playbook:command-name)"
-echo "  Skills:    17  (auto-triggered by description match)"
-echo "  Rules:     $RULE_COUNT   (always loaded, steer every session)"
-echo "  Agents:    $AGENT_COUNT   (delegate with subagent_type)"
-echo "  Hooks:     $HOOK_COUNT   (automatic, fire on tool lifecycle)"
-echo ""
-echo "To activate hooks, merge ~/.buildplaybook/hooks.json"
-echo "into your project's .claude/settings.json"
-echo ""
-echo "Start with: /playbook:where-am-i"
+if [ -n "$FAILED" ]; then
+  echo "Done with failures:$FAILED"
+  exit 1
+fi
+echo "Done. Per-project rules for non-Claude vendors:"
+echo "  ./installers/init-project.sh /path/to/project   (merges AGENTS.md)"
+echo "Capability matrix and degradation notes: PORTABILITY.md"
 echo "─────────────────────────────────────"

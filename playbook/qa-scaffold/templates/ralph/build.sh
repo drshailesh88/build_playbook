@@ -139,8 +139,10 @@ print(next((x['id'] for x in d
   RECENT_COMMITS=$(git log --grep='^RALPH:' -n 10 --format='%H%n%ad%n%B---' --date=short 2>/dev/null || echo '(no RALPH commits yet)')
 
   # Huntley-style single-string prompt argument — no intermediate heredoc.
+  # RALPH_AGENT swaps the driving CLI (claude|codex|cursor|opencode|grok);
+  # unset = claude, with run-agent.sh emitting the exact same flags as before.
   set +e
-  result=$("${TIMEOUT_CMD[@]}" claude -p --dangerously-skip-permissions --model claude-opus-4-6 \
+  result=$("${TIMEOUT_CMD[@]}" ./ralph/run-agent.sh -v "${RALPH_AGENT:-claude}" -m "${RALPH_BUILD_MODEL:-claude-opus-4-6}" \
 "@ralph/build-prompt.md @CLAUDE.md @$PRD @$PROGRESS
 
 ITERATION: $i of $MAX_ITER

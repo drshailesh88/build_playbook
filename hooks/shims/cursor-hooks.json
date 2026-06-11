@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      { "command": "./hooks/cursor-shim.sh pretool gateguard-fact-force.sh", "matcher": "Write|Edit" },
+      { "command": "./hooks/cursor-shim.sh pretool config-protection.sh", "matcher": "Edit" },
+      { "command": "./hooks/cursor-shim.sh pretool careful-check.sh", "matcher": "Shell" },
+      { "command": "./hooks/cursor-shim.sh pretool tmux-enforce.sh", "matcher": "Shell" },
+      { "command": "./hooks/cursor-shim.sh pretool md-blocker.sh", "matcher": "Write" }
+    ],
+    "afterFileEdit": [
+      { "command": "./hooks/cursor-shim.sh postedit quality-gate.sh" },
+      { "command": "./hooks/cursor-shim.sh postedit console-log-check.sh" }
+    ],
+    "afterShellExecution": [
+      { "command": "./hooks/cursor-shim.sh posttool pr-url-logger.sh" }
+    ],
+    "sessionStart": [
+      { "command": "./hooks/cursor-shim.sh session-start session-start.sh" }
+    ],
+    "stop": [
+      { "command": "./hooks/cursor-shim.sh session-end session-end.sh" }
+    ]
+  }
+}

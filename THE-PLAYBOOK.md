@@ -15,14 +15,24 @@
 
 ### 0.1 — Install the Skills and Commands
 
-```bash
-# Copy from master skills repo into your project
-./install.sh /path/to/your-project
+The playbook is vendor-neutral: the same methodology drives Claude Code,
+Codex, Cursor, OpenCode, and Grok. See `PORTABILITY.md` for the full
+capability matrix and per-vendor degradation notes.
 
-# This copies:
-#   .claude/commands/   — all slash commands
-#   .claude/skills/     — all skills with reference files
+```bash
+# Claude Code only (original behavior)
+./install.sh
+
+# Every agent CLI found on PATH (Claude, Codex, Cursor, OpenCode, Grok)
+./install.sh --target all
+
+# Then once per project — rules for the non-Claude vendors via AGENTS.md:
+./installers/init-project.sh /path/to/your-project
 ```
+
+On non-Claude vendors the 56 commands are skills: `/playbook-<name>`
+(Codex: `$playbook-<name>`) instead of `/playbook:<name>`. Ralph loops run
+on any vendor via `RALPH_AGENT=codex|cursor|opencode|grok ./ralph/build.sh`.
 
 ### 0.2 — Install Plugins and MCPs
 

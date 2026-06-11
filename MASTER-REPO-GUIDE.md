@@ -72,7 +72,19 @@ your-repo/
 │   ├── get-shit-done/                 # GSD v1 project management
 │   └── claude-code-design-skills/     # Figma-to-code workflow
 │
-└── install.sh                        # Script to copy everything into a project
+├── installers/                       # Per-vendor installers (see PORTABILITY.md)
+│   ├── lib.sh                        # AGENTS.md compiler, marker-merge, skill builder
+│   ├── install-claude.sh             # Original ~/.claude install
+│   ├── install-codex.sh              # Codex: AGENTS.md, skills, hooks, TOML agents
+│   ├── install-cursor.sh             # Cursor: skills, hook shim, md agents
+│   ├── install-opencode.sh           # OpenCode: commands, skills, JS hook plugin
+│   ├── install-grok.sh               # Grok: AGENTS.md, skills, hook shim
+│   └── init-project.sh               # Per-project AGENTS.md merge (all vendors)
+│
+├── adapters/headless/run-agent.sh    # Universal headless driver (Ralph on any CLI)
+├── hooks/shims/                      # Cursor/Grok payload shims + OpenCode JS plugin
+├── PORTABILITY.md                    # Capability matrix: what works on which vendor
+└── install.sh                        # Dispatcher: --target claude|codex|cursor|opencode|grok|all
 ```
 
 ---
