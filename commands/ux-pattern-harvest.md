@@ -5,6 +5,11 @@ every relevant path, every relevant pattern, distilled once — so builders
 always work from a frozen reference instead of live research. Research in
 the loop is decision leak; research into an artifact is a library.
 
+> **Sources:** Mobbin is the proven primary source. Any other source
+> (e.g. Lazyweb MCP) must clear the auditable-evidence gate before it feeds
+> a card — see `research/RESEARCH-SOURCES.md`. A pattern with no citable
+> primary evidence is inspiration, not a card.
+
 Input: `$ARGUMENTS` — surfaces to harvest (e.g. `org-switcher invites
 onboarding roles billing`), or `--from-planning` to derive the surface list
 from `.planning/` (ux-brief gaps, REBUILD-KICKOFF delta track, pathway
