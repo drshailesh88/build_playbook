@@ -20,3 +20,6 @@ Text links, not icon-only; modal edit field pre-filled.
 
 ## Default verdict for our stack
 RECOMMENDED with the supersession guard — legacy ALREADY has the machinery (supersession chain, census #17–18) and DEC-062 plans a delegate name-fix page (external-links). Certificates module must expose the regeneration as a normal supersession (new row, old row superseded) so self-serve fixes stay auditable.
+
+## Live-web corroboration (2026-06-11)
+Observed live on the PUBLIC page (not just the recipient's own view): "Want to report a typo or a mistake? → Contact Issuer" (Certifier, https://credsverse.com/credentials/60cd0068-2853-4ac1-ae01-36421c4d6f7f) — the correction intake lives on the verification page itself, so a verifier who SPOTS the error can also report it. Certifier also routes recipient "Change Request"s into the issuer console as work items. Refs: `_raw/live-web-verification.md`, `_raw/live-web-issuer-side.md`.

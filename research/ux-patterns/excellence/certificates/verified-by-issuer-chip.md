@@ -22,3 +22,6 @@ Chip is icon + text ("Verified by Credly"), not icon-only.
 
 ## Default verdict for our stack
 VIABLE (V2, ecosystem play) — exposing Open Badges/Credly-compatible metadata would let EventState CME certificates appear as verified credentials elsewhere; V1 prerequisite is just stable IDs + public verify URLs (already recommended).
+
+## Live-web corroboration (2026-06-11)
+Observed live: Badgr/Parchment exposes "View JSON" (the Open Badges assertion) beside the human-readable page (https://badges.parchment.com/public/assertions/EVRYzlD2RO26uyAKFxkOGQ) — the machine-verification layer is one button, not a separate product. Also observed: issuer-trust is itemized separately from credential-validity ("This issuer is verified by Accredible"; Certifier's honest partial-trust: "The OR Society organization has not been verified by Certifier." without failing the verdict). White-label custom credential domains are the industry's premium lever (Certifier $99/mo + $19/mo "Verified Issuer") — tenant-branded verify domains are a monetizable surface. Refs: `_raw/live-web-verification.md`, `_raw/live-web-issuer-side.md`.

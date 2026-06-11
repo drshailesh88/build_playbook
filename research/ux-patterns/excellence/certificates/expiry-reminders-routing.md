@@ -23,3 +23,6 @@ Time-risk badges carry text ("Due soon"), not color alone.
 
 ## Default verdict for our stack
 VIABLE (V2, CME-triggered) — never attempted in legacy; the LinkedIn schema already expects expiry, so the DATA field is V1 (template-level validity, Deel-style "∞ Unlimited" default), while reminder machinery waits for a real recurring-credential need.
+
+## Live-web corroboration (2026-06-11 — OBSERVED expired state + help-doc machinery)
+The only LIVE expired credential observed anywhere: Credly (https://www.credly.com/badges/48c47ac0-5268-45cf-b76c-b015f9a72fc4) — page label flips "Expires:" → red "Expired: June 08, 2023", the Celebrate button disappears, and og:title literally gains "(Expired)" so the state propagates into LinkedIn/Slack link previews; in the verify modal all facts still verify, only the "Expired on" row reads "Verification Failed", banner verdict "Expired". Issuer-side machinery (help-doc): expired page stays reachable with persistent banner + automated reminders (Sertifier up to 3; Certifier 2-weeks-before + post-expiry) and recipient-side "Contact Issuer" one-click renewal request (Certifier). Refs: `_raw/live-web-verification.md`, `_raw/live-web-issuer-side.md`.

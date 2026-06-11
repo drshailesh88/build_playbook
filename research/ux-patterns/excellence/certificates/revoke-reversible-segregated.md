@@ -27,3 +27,6 @@ Impact sentence is real text in the dialog; disabled destructive buttons need a 
 
 ## Default verdict for our stack
 RECOMMENDED — legacy revoke-with-reason is KEPT (it beats the corpus); steal the impact-sentence confirm, the dependency guard for template/event deletion, and the segregated revoked/superseded filters on the issued list.
+
+## Live-web corroboration (2026-06-11, issuer-side harvest)
+The dedicated credential industry CONFIRMS the white-space twice over: (a) no platform shows a structured revocation reason to verifiers (Hyperstack ships reversible Suspend/Unsuspend with NO reason field; Credly guidance says revoking "leaves a record" and recommends telling the earner why — but manually); (b) a publicly viewable revoked credential page was not found on ANY platform — Credly's API returns HTTP 410 Gone for revoked Open Badges assertions, i.e. the page just dies. Sertifier/Certifier hard-delete kills links entirely (the anti-pattern). EventState's mandatory-reason revoke + public REVOKED verdict (PATH-certificates-003) exceeds every surveyed platform. Refs: `_raw/live-web-issuer-side.md`, `_raw/live-web-verification.md`.

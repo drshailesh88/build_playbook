@@ -1,28 +1,34 @@
-# Pattern: Public verification portal (enter ID / scan → valid · revoked · expired verdict)
+# Pattern: Public verification portal (credential URL / ID lookup → verdict)
 
-**Surface:** certificates / public-verify · **Observed in:** ⚠️ **NOT OBSERVED — FIRST-PRINCIPLES CANDIDATE** composed from adjacent anatomy: Luma scan result, Slite verification states, Eventbrite cancelled ticket, Binance expired QR, Aboard code-gated lookup, Udemy/Uxcel artifact trust marks (refs: https://mobbin.com/screens/d3777ec9-8cb9-412f-a4a6-cb5046285df8, https://mobbin.com/screens/784fd37d-3429-4f47-b58c-0b6fc0ffed07, https://mobbin.com/screens/7dedb891-b93a-48ad-9e3f-3463ae4064c6, https://mobbin.com/screens/92c083bc-d3d5-40ce-9146-5049c02e14b0, https://mobbin.com/screens/f1adec7e-f866-42d4-859a-8346297880b9)
+**Surface:** certificates / public-verify · **Observed in (LIVE WEB, 2026-06-11 deep harvest):** Credly, Accredible (credential.net), Certifier (credsverse), Badgr/Parchment, Sertifier, Microsoft Learn (refs: https://www.credly.com/badges/862230de-19d7-4586-80d9-184a485f9aeb, https://www.credential.net/d4bd834b-0937-4b7c-993e-e923567dc053, https://credsverse.com/credentials/60cd0068-2853-4ac1-ae01-36421c4d6f7f, https://badges.parchment.com/public/assertions/EVRYzlD2RO26uyAKFxkOGQ, https://verified.sertifier.com/en/search/, https://learn.microsoft.com/api/credentials/share/en-us/DieterRauscher/9CAD3CFEBE5DB4A7?sharingId=3C39B423744ABF3C — full anatomy per page in `_raw/live-web-verification.md`)
 
-HARVEST HONESTY: three dedicated queries across two agents found NO Credly/Accredible-style "verify this credential" page on Mobbin. The anatomy below is synthesized from cited adjacents, not observed end-to-end.
+UPGRADE NOTE: this card was first published as a ⚠️ first-principles candidate (no Mobbin coverage — that remains true). The 2026-06-11 live-web harvest observed six real platforms end-to-end; the card is now OBSERVED. Mobbin-absence note retained in INDEX coverage.
 
-## Flow (synthesized)
-1. Entry: certificate URL/QR lands directly on the verdict; manual path = code-gated lookup ("Please provide the access code…" — Aboard) for typed certificate numbers.
-2. Verdict first, glanceable, in words + color: green "✓ Check In Successful"-style toast/banner (Luma) → for certificates: VALID / REVOKED / SUPERSEDED / EXPIRED as labeled states (state vocabulary from Slite: verified / outdated / expired).
-3. Below the verdict, the record card: recipient name, certificate type, event, issue date, issuing org — Luma's three-column meta (Status / Registered / Checked In) is the template.
-4. Revoked state shows the FACT plainly without leaking the reason publicly (reason is admin/audit data); Eventbrite's "Successfully cancelled order" banner over a voided ticket is the visual precedent.
-5. Stale-QR sad path: "QR code expired — Refresh" inside the frame (Binance) for time-limited verification links.
+## Flow (observed)
+1. **The credential URL IS the verification page** — every platform resolves the shared link to a canonical public page; Microsoft Learn proves the minimal form: no ceremony, trust = domain + "Status: Active" chip + dual identifiers (Credential ID + Certification number) + earned/expires dates.
+2. **Manual lookup portal** for typed IDs exists at Sertifier (verified.sertifier.com/en/search) and Accredible (accredible.com/verification); PMI runs a registry. Sertifier's not-found verdict is the only one observed live: "Oops! Sorry, there is no user matching with the given username." + "Report an issue" — a typo gets a neutral not-found, never a fraud accusation.
+3. **Verdict structure:** per-fact verification rows are SEPARATE from the overall verdict banner (see verify-ceremony-checklist card). Credly expired example: every fact still verifies, the "Expired on" row shows "Verification Failed", final banner = "Expired".
+4. **Record card below the verdict:** recipient name, credential title, issuer (linked + issuer-verified chip), issue/expiry dates with the no-expiry case explicit ("Expires on: No expiry date" — Sertifier; "Does not expire" — Accredible).
+5. **Freshness proof:** Badgr/Parchment shows "Verified — Last verified by Parchment Digital Badges on {today}" + a "Re-verify Badge" button — verification is an event with a timestamp, not a static label.
+6. **Machine layer:** Badgr exposes "View JSON" (Open Badges assertion) beside the human page; Credly's API returns HTTP 410 Gone for revoked assertions.
+7. **Error-report affordance on the public page:** "Want to report a typo or a mistake? → Contact Issuer" (Certifier) — the public page doubles as the correction intake.
+
+## PII norms (observed across all six)
+Full name: always public. Email: never. Credly/Accredible/Sertifier link to the recipient's full credential wallet; Accredible exposes recipient LinkedIn; Certifier is the most minimal (name only). Badgr's consent line: "Awarded To — You need this Recipient's permission to verify their identity."
 
 ## Use when
-"Anyone verifies authenticity" is a stated job — employers, councils, audit bodies — and the URL is printed on every artifact.
+Every issued certificate — the URL printed on the artifact lands here; employer, council officer, and recipient all use the same page.
 
 ## Avoid when
-Never omit for credentials; but avoid exposing PII beyond the claim (no email, no phone) and avoid a bare JSON/api response standing in for the page.
+Don't gate the verdict behind login; don't expose wallet/other-credentials links for medical delegates without an explicit recipient opt-in (follow Certifier-minimal, not Credly-maximal, as the privacy default).
 
-## Sad paths observed (adjacent)
-- Unknown/garbled ID → not-found state must be distinct from REVOKED (don't accuse a typo of fraud). [first-principles]
-- Verification of a SUPERSEDED certificate should point to "a newer certificate exists" without exposing the new holder data. [first-principles, legacy supersession chain]
+## Sad paths observed (LIVE)
+- **Expired (Credly, live):** "Expires:" label flips to red "Expired: June 08, 2023"; Celebrate button disappears; og:title gains "(Expired)" so the state leaks into link previews on LinkedIn/Slack.
+- **Not found (Sertifier, live):** neutral message + "Report an issue" — distinct from any negative verdict.
+- **Revoked: NOT observed live on any platform** (only Credly docs: revoked assertion → HTTP 410; issuer guidance "revoking leaves a record"). Public revoked-state rendering remains first-principles for EventState — pathways already pin it (verify-result-revoked, PATH-certificates-003).
 
 ## Accessibility
-Verdict as text + icon, never color alone; record card is plain text.
+Verdict as text + chip, never color alone (all observed); record card is real text duplicating everything printed on the artifact image.
 
 ## Default verdict for our stack
-RECOMMENDED — legacy already HAS verify-by-token + counter (census #42–43) and pathways assert verify-result-revoked (PATH-certificates-003); this card defines the page those mechanics deserve. EventState can EXCEED the observed industry here.
+RECOMMENDED — now with observed anatomy: canonical page + per-fact rows + overall verdict + freshness timestamp + neutral not-found + Contact Issuer intake; revoked rendering designed first-principles (legacy already has the data). EventState still EXCEEDS the corpus by showing the revoked verdict publicly with supersession pointers.

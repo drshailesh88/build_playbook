@@ -1,14 +1,15 @@
 # Excellence Pattern Library — Certificates / Credentials
 
 **Job-to-be-done:** design a certificate/credential template → issue at scale → recipient receives/downloads/shares → anyone verifies authenticity → admin manages lifecycle (revoke/reissue/expire).
-**Harvested:** 2026-06-11 · Mobbin MCP, three modes (by-app / by-pattern / by-flow), each looped until dry (2 consecutive queries with nothing new). Raw observations with full step sequences in `_raw/`.
+**Harvested:** 2026-06-11 · Mobbin MCP, three modes (by-app / by-pattern / by-flow), each looped until dry (2 consecutive queries with nothing new) · **PLUS live-web deep harvest 2026-06-11** (two modes: live public credential/verification pages; issuer-side platform docs/demos). Raw observations with full step sequences in `_raw/`.
 
 ## Coverage honesty
 
-- **Swept:** Canva, Udemy, Uxcel, Skillshare, Codecademy, Coursera, LinkedIn, Upwork×Credly, Teachable, Deel, Kajabi, Podia, Cake Equity + ~50 adjacent apps (Docusign, Attio, Klaviyo, Customer.io, AutoSend, Resend, PandaDoc, Twingate, 7shifts, Apple Wallet…). Platforms: web + iOS.
-- **Absent from Mobbin (zero corpus presence):** Accredible, Sertifier, Certopus, CertifyMe, Credly (issuer side), Canvas Badges — the dedicated credential-platform admin UX has NO direct coverage; issuer-side cards are built from cited adjacents.
-- **Not observed anywhere (first-principles candidates, flagged on cards):** dedicated public verification portal (enter-ID → valid/revoked verdict); revoke-with-REASON capture; what a revoked credential looks like to a verifier; credential expiry renewal journeys; certificate-as-wallet-pass end-to-end.
-- **Not swept:** Android/Google Wallet; pagination page 2+ on Canva/LinkedIn queries; email-client rendering of issuance emails; print-production; blockchain credentials; issuer-permission/SSO gating.
+- **Swept (Mobbin):** Canva, Udemy, Uxcel, Skillshare, Codecademy, Coursera, LinkedIn, Upwork×Credly, Teachable, Deel, Kajabi, Podia, Cake Equity + ~50 adjacent apps (Docusign, Attio, Klaviyo, Customer.io, AutoSend, Resend, PandaDoc, Twingate, 7shifts, Apple Wallet…). Platforms: web + iOS.
+- **Swept (live web, 2026-06-11):** Credly, Accredible/credential.net, Certifier/credsverse, Badgr/Parchment, Sertifier, Microsoft Learn — REAL public credential pages observed end-to-end incl. verify ceremonies (`_raw/live-web-verification.md`); Sertifier, Certifier, Accredible, Certopus, CertifyMe, Virtualbadge, Hyperstack issuer consoles at help-doc/screenshot evidence class (`_raw/live-web-issuer-side.md`).
+- **Gap status after live-web harvest:** ~~public verification portal~~ → OBSERVED live (6 platforms; card upgraded); ~~credential expiry states~~ → expired OBSERVED live (Credly); ~~issuer-side admin UX~~ → covered at help-doc level (capability + labeled-UI, NOT interaction-level — no interactive demos exist for any platform; that evidence class is empty industry-wide).
+- **Still not observed anywhere (first-principles, flagged on cards):** what a REVOKED credential shows a verifier (Credly kills the page with HTTP 410; others hard-delete — EventState's public revoked verdict exceeds the field); revoke-with-REASON shown to anyone; certificate-as-wallet-pass end-to-end.
+- **Not swept:** Android/Google Wallet; pagination page 2+ on Canva/LinkedIn queries; email-client rendering of issuance emails; print-production; blockchain credentials; issuer-permission/SSO gating; Credly issuer KB (403-blocked); PMI registry + Certifier issuer verify-portal (bot-blocked headless); YouTube video content (transcripts not harvested).
 - Minor raw-only observations not carded: Canva export panel ("Suggested" format badge, "If your download hasn't started, click here"), Canva three-tier share links ("Anyone with the link… No sign in required"), LinkedIn Skill Assessments badge catalog — see `_raw/by-app.md`, `_raw/by-pattern.md`.
 
 ## Cards (★ = recommended default for EventState)
@@ -49,7 +50,9 @@
 ### Verification & lifecycle
 | Card | One-liner | Verdict |
 |---|---|---|
-| ★ [public-verification-portal](public-verification-portal.md) | ⚠️ FIRST-PRINCIPLES: verdict-first page (valid/revoked/superseded/expired) over legacy verify-token | RECOMMENDED |
+| ★ [public-verification-portal](public-verification-portal.md) | OBSERVED LIVE (6 platforms, 2026-06-11): canonical page + verdict + freshness + neutral not-found; revoked rendering still first-principles | RECOMMENDED |
+| ★ [verify-ceremony-checklist](verify-ceremony-checklist.md) | Animated per-fact verification rows + separate overall verdict (Credly/Accredible/Sertifier/Certifier, observed live) | RECOMMENDED |
+| ★ [issuer-console-patterns](issuer-console-patterns.md) | The Mobbin-absent industry's admin anatomy: 11 recurring patterns at help-doc evidence class | RECOMMENDED (corroboration layer) |
 | ★ [qr-with-manual-fallback](qr-with-manual-fallback.md) | QR on artifact always paired with typable ID + short URL | RECOMMENDED |
 | [verified-by-issuer-chip](verified-by-issuer-chip.md) | Open-credential metadata so third parties render "verified" | VIABLE (V2 ecosystem) |
 | ★ [revoke-reversible-segregated](revoke-reversible-segregated.md) | Impact-sentence confirm, dependency guard, segregated revoked filter (legacy reason-capture KEPT — exceeds corpus) | RECOMMENDED |

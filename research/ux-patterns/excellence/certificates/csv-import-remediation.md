@@ -27,3 +27,6 @@ Status chips carry text labels; needs-attention grouping is navigable as section
 
 ## Default verdict for our stack
 RECOMMENDED for the custom-list path, scoped: reuse the project-wide import wizard pattern (onboarding-import surface) and add the certificate-specific pre-flight ("N will receive delegate_attendance; 3 already hold one — will be superseded/skipped").
+
+## Live-web corroboration (2026-06-11, issuer-side harvest — help-doc evidence)
+All 7 surveyed credential platforms ship the same wizard shape. Steals beyond the Mobbin set: errors-block/warnings-flow-through with "Exclude records with warnings" opt-out + error-only CSV export preserving column order with an appended message column (Accredible); 6-option re-upload update-strategy dialog, e.g. "Update this campaign + set defaults for future" (Sertifier); and a GDPR consent checkbox at import — "Confirm that you have permission to use the personal data" (Certifier) — directly relevant for medical-conference recipient data. Refs: `_raw/live-web-issuer-side.md`, `issuer-console-patterns` card.

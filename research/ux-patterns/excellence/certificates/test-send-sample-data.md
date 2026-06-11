@@ -23,3 +23,6 @@ Preview toggle (Desktop/Mobile) and profile search are standard controls; confir
 
 ## Default verdict for our stack
 RECOMMENDED — never attempted in legacy (no test-send in census); for a medical-conference audience a misrendered name/credit-hours field is a reputation event. "Send test certificate to myself" = one button on the bulk screen.
+
+## Live-web corroboration (2026-06-11, issuer-side harvest — help-doc evidence)
+Industry-native confirmation: Sertifier documents "Send a Test Credential" as a first-class issue-time option (the only surveyed credential platform that does — the others rely on the draft→publish review stage instead). Refs: `_raw/live-web-issuer-side.md`.

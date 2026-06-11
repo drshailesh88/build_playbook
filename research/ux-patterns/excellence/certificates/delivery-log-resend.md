@@ -24,3 +24,6 @@ Status chips are text labels with counts; expandable rows need disclosure semant
 
 ## Default verdict for our stack
 RECOMMENDED — legacy has resend-notification (census #24) but NO delivery-status surface at all; this is the single biggest admin-trust gap. Issued-certificates list gains a Delivery column + expandable event log + resend.
+
+## Live-web corroboration (2026-06-11, issuer-side harvest — help-doc evidence)
+The dedicated credential industry confirms AND extends: per-recipient status is a THREE-LAYER ladder (credential status × email delivery × engagement) — Certifier ships a 15-state taxonomy with the distinction "Email is not provided" vs "Email is not sent", filter operators incl. "is empty", bulk Export/Delete/Resend, and a "Recipient View" see-as-recipient button; "Added to LinkedIn profile" is tracked as a first-class engagement outcome (Certifier, Sertifier). Refs: `_raw/live-web-issuer-side.md`, summarized in `issuer-console-patterns` card.

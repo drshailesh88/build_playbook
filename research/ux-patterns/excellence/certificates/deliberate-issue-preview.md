@@ -23,3 +23,6 @@ Preview is a rendered image of the PDF — must carry alt text naming recipient 
 
 ## Default verdict for our stack
 RECOMMENDED — legacy issues blind (census #16, #27). Insert one preview step in single issuance and a review checkpoint (recipients count + template + notify channels) before bulk generation.
+
+## Live-web corroboration (2026-06-11, issuer-side harvest — help-doc evidence)
+Two-stage issuance is industry-native, not just adjacent-tool practice: Accredible "Create, but don't publish" → "View Unpublished Credentials" → Publish → Confirm; Certifier Draft status + "Create Draft Credentials"; Hyperstack Generate → "Under Review" → publish; Certopus publish toggle. Issue-time options recur: immediately / "Schedule for Later" / send-email-or-silent. Refs: `_raw/live-web-issuer-side.md`, `issuer-console-patterns` card.
