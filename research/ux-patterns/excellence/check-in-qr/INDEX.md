@@ -8,7 +8,7 @@
 - **NOT on Mobbin / not found:** Eventbrite **Organizer** staff app (the brief's suggested reference — only Eventbrite's attendee side exists there), Cvent OnArrival, Whova/Bizzabo onsite, self-serve **kiosk** check-in, **badge printing** on scan, **scan-out / re-entry / occupancy**, multi-device scanner coordination. → first-principles candidates, flagged in the WOW-DELTA.
 - Scanner-recovery and offline evidence drawn cross-domain (Walmart, Lyft, Grab, Lime, ZARA, Qantas, Waymo, WeTransfer, Expedia) where event apps were silent.
 
-## Cards (16)
+## Cards (17)
 | Card | One-liner | Default verdict |
 |---|---|---|
 | scan-identity-confirm-sheet | Scan raises an identity sheet; human confirms; undo on the same sheet | **RECOMMENDED** |
@@ -20,6 +20,7 @@
 | live-progress-strip | Checked-in vs expected as a progress bar ON the scan surface | **RECOMMENDED** |
 | session-scoped-checkin | Session selector scopes every scan; early check-in labeled, not blocked | **RECOMMENDED** |
 | fullscreen-qr-wallet-pass | Full-screen high-contrast QR + Add to Wallet + ticket recovery | **RECOMMENDED** |
+| badge-pickup-logistics | Badge-desk where/when/ID-rules answered on the credential surface | VIABLE (module placement = founder call) |
 | offline-credential-fallback-code | "Available offline" + human-readable code + gate routing on the ticket | **RECOMMENDED** |
 | rotating-anti-screenshot-code | SafeTix-style living barcode; visible TTL | AVOID (V1) — printed-email persona |
 | persistent-member-pass | One durable identity QR across an org's events | VIABLE (V2 architecture choice) |
