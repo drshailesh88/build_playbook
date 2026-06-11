@@ -39,6 +39,7 @@ filled.
 
 | Artifact | What it contributes |
 |---|---|
+| `docs/done-spec/*.DONE.md` (if present, from `/done-spec`) | DONE-MEANS statements become pathway chains; SCARS become must-not-reproduce sad branches; oracle confidence per module (a module whose done-spec is mostly UNFINISHED is delta-track, not oracle-track) |
 | `.planning/ux-brief.md` | Per-module interaction models, feedback patterns, motion/speed expectations, navigation flows |
 | PRD (latest) | Feature behavior, acceptance criteria, user stories |
 | `.planning/data-requirements.md` | Data lifecycle effects (what a create/update/delete must visibly cause) |

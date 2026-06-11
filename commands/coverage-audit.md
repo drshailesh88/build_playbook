@@ -16,6 +16,9 @@ Input: `$ARGUMENTS` — optional focus (`matrix`, `states`, `triggers`,
 - `UBIQUITOUS_LANGUAGE.md` / `.planning/CONTEXT.md` — the noun inventory
 - Roles from the decision ledger + origin docs — the actor inventory
 - `.planning/pathways/` (pathways.json + per-module files) — the coverage claims
+- `docs/done-spec/*.DONE.md` (from `/done-spec`, if present) — every DONE-MEANS
+  statement with no covering pathway is a GAP; oracle confidence per module
+  comes from these, not from legacy status files
 - `.planning/decision-index.md` + decisions/ — DECIDED and REJECTED scope
 - The deferral register — explicitly postponed items
 - Feature census + origin request — generator cross-check
