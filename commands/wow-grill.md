@@ -13,6 +13,11 @@ Input: `$ARGUMENTS` — module name. One module per session.
 
 ## Read first (the agenda builds itself)
 
+0. **Resume check:** if a grill-log for this module already exists with a
+   `RESUME-FROM-HERE` marker, this is a resumed grill — load the
+   already-stamped WOW-DELTA verdicts + the marker, confirm the resume
+   point to the founder in one line, and continue from the next undecided
+   item. NEVER re-ask ruled items.
 1. `.planning/ux-patterns/excellence/<module>.WOW-DELTA.md` — the ranked
    stolen-pattern candidates with V1-CORE / V1-POLISH / V2 recommendations
 2. `.planning/dumps/INDEX.md` — unconsumed fragments tagged module:<name>
@@ -56,6 +61,26 @@ item (designed, not harvested) or an explicit deferral.
 - A pathway-addendum task list for /extract-pathways (V1-CORE items only)
 - One-line module verdict for the kickoff doc: "certificates: 4 V1-CORE,
   2 polish, 3 V2, 1 rejected — feature-poverty risk cleared/remaining"
+
+## Pausing mid-grill (overnight / founder fatigue / long gaps)
+
+A grill pauses whenever the founder says so — fatigue is a valid reason
+and stopping clean beats grinding tired. Token economics make the HOW
+non-negotiable: an idle session costs nothing, but its prompt cache
+expires within minutes — typing into a long stale session re-reads the
+entire conversation uncached at full price, every message. So never
+resume in-place after hours away. Instead:
+
+1. **Checkpoint NOW:** write every verdict ruled so far to disk — DECs,
+   grill-log entries, WOW-DELTA items stamped — and commit (scoped add).
+2. **Append a `RESUME-FROM-HERE` block** to the grill-log: which fork the
+   session stopped at + the next undecided question, verbatim.
+3. **Confirm commit hash + resume point in one line**, then the founder
+   closes the session.
+
+Resume = run this command again in a FRESH session; step 0 of "Read
+first" picks up from the marker. Cheap (reads only artifacts), lossless
+(everything ruled is already on disk).
 
 ## Verdict audit (mandatory close, DEC-012)
 

@@ -11,6 +11,16 @@ to that purpose — a handoff for "run the comms wow-grill" looks nothing like a
 handoff for "debug the judge ladder". If no argument, ask for one before writing;
 an untargeted handoff is a summary, and summaries rot.
 
+**This is also the overnight pause button — and the token economics say use
+it.** An idle session costs nothing, but its prompt cache expires within
+minutes: resuming a long stale session in-place re-reads the entire
+conversation uncached at full price on every message. Checkpointing to
+artifacts + closing + resuming FRESH (the new session reads only the handoff
++ the artifacts it cites) is both the cheap path and the lossless one. When
+the founder says "pausing for the night", that means: flush pending writes to
+their proper artifacts (DECs to the ledger, verdicts to their files), commit
+scoped, write this handoff with a resume point, confirm the commit hash, done.
+
 ## Output
 
 Write to `.planning/handoffs/YYYY-MM-DD-<purpose-slug>.md` in the current repo.

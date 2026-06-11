@@ -38,6 +38,7 @@ GAP (missing capability) · DEBT (works, but fragile) · QUESTION (unvalidated).
 | L-014 | DEC counter race: two concurrent sessions (design-extract + pathways compile) both claimed DEC-076..081 — newer commands lacked grill-me's lock protocol and allocated at session start | scripts/next-dec.sh (atomic, shares grill-me's .planning/.dec-lock mutex, race-tested 6-way) + allocate-at-WRITE-time convention swept into 6 command files, same day |
 | L-005 | Factory templates had no path to the VPS | build_playbook pushed to GitHub (made PRIVATE — it had been public since May 31), cloned to ~/build_playbook on clawdbot, PLAYBOOK_ROOT exported, judge.sh verified present |
 | L-011 | claude version skew (VPS 2.1.97 vs laptop) | VPS updated to 2.1.170, /usr/local/bin symlink repointed; per-run version preflight still worth adding to run.sh later |
+| L-019 | No pause protocol for long founder sessions (observed live 2026-06-11: founder went sleepy mid-comms-grill; an advisory session had to improvise checkpoint→close→resume-fresh; the expensive failure mode — resuming a stale session in-place after cache expiry — was one keystroke away) | Same day: pause protocol + RESUME-FROM-HERE marker + resume-check step encoded in wow-grill.md; token-economics rationale + "overnight pause button" framing in handoff.md; synced to all agents |
 
 ## Promotion rules
 
