@@ -39,6 +39,31 @@ this repo — never chat memory, never a vendor feature.
 - **Founder thought-dumps:** a message starting `DUMP:` is captured verbatim to
   `.planning/dumps/` + indexed, then resume your task. Never summarize it away.
 
+## Pausing — the founder can be tired at ANY point
+
+Applies to EVERY founder-interactive session — grills, briefs, design
+sessions, planning, triage. (AFK loops are exempt: they checkpoint
+mechanically via their own state files.)
+
+Idle is free; stale in-place resume is the expensive path — the prompt
+cache expires in minutes, so a session resumed hours later re-reads its
+whole conversation uncached on every message. Never continue a session
+that sat idle for hours; checkpoint, close, resume fresh.
+
+When the founder signals pause, in any phrasing ("sleepy", "stopping",
+"continue tomorrow"):
+
+1. Flush everything ruled or decided so far to its proper artifact and
+   commit (scoped add).
+2. Append a `RESUME-FROM-HERE` marker to the session's natural log or
+   artifact — where you stopped + the next undecided question, verbatim.
+   No natural log? Write `.planning/handoffs/<date>-<purpose>.md` instead.
+3. Confirm the commit hash + resume point in ONE line. The founder closes.
+
+Mirror rule: when STARTING any interactive protocol, check its artifact
+for an unconsumed `RESUME-FROM-HERE` marker first — resume from it, and
+never re-ask what is already ruled.
+
 ## When you finish or abandon a task
 
 Flush open questions, answers received, and judgment calls into the relevant
