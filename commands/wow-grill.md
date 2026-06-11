@@ -57,6 +57,37 @@ item (designed, not harvested) or an explicit deferral.
 - One-line module verdict for the kickoff doc: "certificates: 4 V1-CORE,
   2 polish, 3 V2, 1 rejected — feature-poverty risk cleared/remaining"
 
+## Verdict audit (mandatory close, DEC-012)
+
+The grill author never audits its own verdicts. After outputs are written,
+run a read-only Codex pass over the session's verdicts:
+
+```bash
+codex exec --sandbox read-only - <<'PACKET'
+You are auditing scope DECs from a founder grill (module: <module>).
+Read the dated decisions file, the stamped WOW-DELTA, and the prior DEC
+index. Try to BREAK the verdicts:
+1. Which V1-CORE acceptances rest on no card/done-spec/testimony evidence?
+2. Which V2/REJECTED deferral leaves a V1 pathway or DONE-MEANS dangling?
+3. Which new DEC contradicts a prior DEC (cite both ids)?
+4. What did the founder wave through that a skeptic would re-open?
+Report findings only — no fixes. Cite DEC ids and file paths.
+PACKET
+```
+
+Codex findings go to the FOUNDER, never back to the grill agent to
+self-adjudicate. Disagreement escalates; it never auto-resolves. Append
+the audit outcome (clean / N findings / escalated) to the module's
+one-line verdict.
+
+## Before grilling: harvester retirement check (DEC-012)
+
+Grills run in FRESH sessions reading committed artifacts — never inside
+the harvest agent's session (the advocate must not judge). Before the
+grill starts, confirm the module's harvest terminal was retired cleanly:
+open questions, founder answers, and judgment calls flushed into the
+WOW-DELTA or a handoff doc. Chat-only context is treated as nonexistent.
+
 ## Scope guards (non-negotiable)
 
 - **Steal the pattern, not the product** — "Canva-grade certificate
