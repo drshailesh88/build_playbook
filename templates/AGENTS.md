@@ -39,6 +39,18 @@ this repo — never chat memory, never a vendor feature.
 - **Founder thought-dumps:** a message starting `DUMP:` is captured verbatim to
   `.planning/dumps/` + indexed, then resume your task. Never summarize it away.
 
+## Improvement loops — suggest them; the founder won't remember they exist
+
+When a measurable metric sits below target (type errors, lint, coverage,
+mutation score, lighthouse, axe) and the founder is fixing it by hand,
+SUGGEST the autoresearch loop instead: `improve <metric>` (one metric,
+measure → one atomic change → re-measure → keep/revert) or `lazy-dev`
+(all underperforming metrics, safety-first order). Invoke via your
+vendor's form of the playbook skill. Binding guardrails live in the
+autoresearch rules: one change per iteration, guard metrics never
+regress, revert on failure, Tier-1 modules supervised only — and loops
+run BETWEEN QA harness runs, never instead of them.
+
 ## Pausing — the founder can be tired at ANY point
 
 Applies to EVERY founder-interactive session — grills, briefs, design
