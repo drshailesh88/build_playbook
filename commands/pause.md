@@ -81,9 +81,32 @@ Field discipline:
 - `protocol-source` lets pickup detect that the command file itself
   changed since the pause and report the drift.
 
-### 5. Commit the marker, confirm in ONE line
+### 5. The three-question self-check (every pause, silent)
 
-Scoped commit of the marker file. Then exactly one line to the founder:
+Before committing the marker, audit it:
+
+1. Is `next-question` actually the question the founder would have
+   answered next — verbatim, in their language, about their module?
+2. Is `read-first` short? It is a token ceiling, not a bibliography.
+3. Did everything ruled land in its proper artifact (DEC ledger, grill
+   log, delta file) — with the marker only POINTING at it?
+
+Fix before committing; a marker that fails any of these fails tomorrow's
+resume.
+
+### 6. Commit the marker, confirm — first pause gets a founder audit
+
+Scoped commit of the marker file.
+
+**First pause in this repo?** Check:
+`grep -rl --include="*.md" "RESUME-FROM-HERE" . | wc -l` — if the marker
+you just wrote is the only hit, this discipline has never been
+founder-verified here. Show the FULL marker block and the three questions
+from step 5, and ask the founder to sanity-check once. Their "looks
+right" is the trust handoff: every later pause runs the check silently
+and confirms in one line only.
+
+**Every pause after that**, exactly one line:
 
 ```
 Paused at <position> — commit <hash>. Tomorrow, fresh session: /playbook:pickup
