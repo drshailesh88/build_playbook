@@ -96,7 +96,7 @@ Otherwise use this routing logic (adapted from GSD progress Routes A-F):
 | Phase complete, next phase exists | `/gsd:discuss-phase [N+1]` — "Move to next phase" |
 | All phases complete | `/gsd:complete-milestone` — "Wrap up and tag the release" |
 | Open GitHub issues exist | `/gsd:quick '[first issue title]'` — "Fix the open issue" |
-| Quality score dropped | `/anneal-check` — "Quality regression detected, investigate" |
+| Quality score dropped | `/anneal-check` — "Quality regression detected, investigate"; if a specific metric is below target, follow with `/playbook:improve <metric>` |
 | Uncommitted changes | SCOPED commit of files YOU own — see warning below |
 
 ⚠️ **Never recommend `git add .` / `git add -A`.** Uncommitted files may
@@ -158,7 +158,7 @@ After aggregating GSD, Ralph, QA, and git state, recommend ONE command:
 |-------|-------------------|
 | Ralph has blocked stories and no buildable incomplete stories | `All stories blocked. Run /playbook:contract-pack or fix specs.` |
 | Ralph is mid-build | `Continue: ./ralph/run.sh` |
-| Latest QA verdict is `RED` or `HARD` | `Fix failures, then: /playbook:qa-run` |
+| Latest QA verdict is `RED` or `HARD` | `Fix failures (metric-shaped shortfalls: /playbook:improve <metric>), then: /playbook:qa-run` |
 | Uncommitted changes exist | `Commit your work first` |
 | Everything is green | `/playbook:ship` |
 | None of the above | Use existing routing logic from step 3 |

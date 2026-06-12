@@ -3,15 +3,22 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 ## Phase 1: Capture & Research
 - `/playbook:capture-planning` — Save planning session notes to repo
 - `/playbook:compete-research` — Deep dive into competitors + design inspirations
+- `/playbook:office-hours` — YC-style deep product interrogation; reframe the problem before building
+- `/playbook:done-spec <module>` — Mine a reference implementation (legacy app, competitor) for the definition of DONE
+- `/playbook:design-extract <url>` — Extract design.md + voice.md from an inspiration site
+- `/playbook:ux-pattern-harvest` — Exhaustive Mobbin sweep into a frozen pattern library
 
 ## Phase 2: Grill & Interview
 - `/playbook:ux-brief` — UX interview (all questions upfront, bulk brain dump)
 - `/playbook:ui-brief` — UI/visual language interview (fonts, colors, spacing)
 - `/playbook:data-grill` — Database requirements interview (plain English)
 - `/playbook:infra-grill` — Infrastructure requirements interview (plain English)
+- `/playbook:wow-grill <module>` — Ratify the module's excellence delta into scope (anti-feature-poverty)
 
 ## Phase 3: Language & PRD
 - `grill-me` skill — Stress-test your idea (auto-triggers)
+- `/playbook:extract-pathways` — Compile per-module behavior pathways from planning artifacts
+- `/playbook:coverage-audit` — Prove incompleteness can't hide (after pathways, before PRD)
 - `write-a-prd` skill — Write the PRD from gathered context (auto-triggers)
 - `ubiquitous-language` skill — Define shared vocabulary (auto-triggers)
 
@@ -38,6 +45,8 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:prd-to-ralph` — Convert the PRD + grilling decisions into Huntley's exact `prd.json` format (flat array: id, category, description, page, ui_details, behavior, data_model, priority, core, passes, tests.{unit,e2e,edge_cases}).
 - `/playbook:scaffold-ralph` — Drop adapted Ralph scripts + prompt templates into the target app's `ralph/` directory: `build.sh` (Claude Opus build loop), `qa.sh` (Codex independent QA loop), `run.sh` (chains build → QA), `build-prompt.template.md`, `qa-prompt.template.md`. **Do NOT download Huntley's raw scripts** — they reference his product-cloning infra. Customize the `CUSTOMIZE:` sections in each prompt template, rename `.template.md` → `.md`.
 - `/playbook:ralph-watch` — Drop `ralph/watch.sh` — Slack + Linear progress monitor, pure observer (safe to kill/restart). Reads flat-array prd.json + git log; distinguishes built vs QA'd.
+- `/playbook:ralph-goal <story-id>` — Generate a Claude Code `/goal` condition for one Ralph story (Worker/Judge pattern)
+- `/playbook:morning-review` — Morning after an AFK run: compile the night's evidence, ordered by what needs YOUR judgment
 - Flow: `prd-to-ralph` → `scaffold-ralph` → customize prompts → `./ralph/run.sh` (build via Claude Opus → QA via Codex, two models) → Phase 7 QA pipeline below (the ungameable judge).
 
 ## Phase 6: Wire Selectors (post-build)
@@ -55,14 +64,31 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:qa-unblock` — Reset a BLOCKED feature → pending + clear plateau buffer
 - `/playbook:qa-audit-violations` — Aggregate `violations.jsonl` across all runs by pattern
 - `/playbook:eval-check` — Run deterministic fixture evals for playbook command outputs
+- `/playbook:promote-finding` — Same mistake caught twice by anything probabilistic → promote it to a deterministic check
 
-## Standalone
+## Phase 7.5: Autonomous Improvement (between QA runs — never instead of them)
+- `/playbook:improve <metric>` — Karpathy autoresearch loop on ONE metric: measure → one atomic change → re-measure → keep/revert → repeat (scripts/score.sh; guards + file locks per rules/autoresearch.md)
+- `/playbook:lazy-dev` — Chain improve loops across all underperforming metrics, safety-first order; overnight mode for Tier 2/3 only
+- Sequence is always: `/playbook:qa-run` → improve loops → `/playbook:qa-run` again. The QA harness is the source of truth; autoresearch is the engine.
+
+## Phase 8: Ship & Monitor
+- `/playbook:ship` — Reviewed → deployed and monitored, zero manual steps
+- `/playbook:canary` — Watch production for problems in the critical first minutes after shipping
+
+## Session Economics
 - `/playbook:pause` — Tired? Checkpoint this session (flush + commit + RESUME-FROM-HERE marker), close, sleep
 - `/playbook:pickup` — Fresh session next day: find the marker, resume the exact protocol at the exact question
+- `/playbook:handoff <purpose>` — Compact this session into a doc a DIFFERENTLY-purposed next agent picks up
+- `/playbook:where-am-i` — Where am I? What's next? (10 seconds)
 - `/playbook:compact-context` — Save session state before auto-compaction
+
+## Standalone
+- `/playbook:guide [phase]` — Present THE-PLAYBOOK.md as an actionable guide
+- `/playbook:thought-dump` — Capture raw founder streams verbatim (the DUMP: protocol)
+- `/playbook:memory-sync` — Manual Supermemory save/recall/management
+- `/playbook:investigate` — Systematic debugging: root cause before any fix, no band-aids
 - `/playbook:security-audit` — 6-check OWASP security review
 - `/playbook:verify-with-codex` — Cross-model code review
-- `/playbook:where-am-i` — Where am I? What's next? (10 seconds)
 - `/playbook:doctor` — Health check for playbook hooks, deployment, CLIs, learnings, and MCP/tool counts
 
 ## The Flow

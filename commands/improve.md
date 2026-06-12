@@ -27,12 +27,30 @@ Run `./scripts/score.sh` with any of:
 
 ## Workflow
 
+### 0. Ensure the scorer exists (target projects won't have it)
+
+`/improve` runs in TARGET projects, which start without `./scripts/score.sh`.
+If it is missing:
+
+1. Copy the reference scorer from `~/.buildplaybook/goal-md/score.sh`
+   (installed by the playbook; inside the playbook repo itself use
+   `scripts/score.sh`) to the project's `scripts/score.sh`.
+2. Adapt the metric commands to THIS project's stack (test runner,
+   lighthouse config, etc.) — verify each metric you'll use actually
+   produces a number before iteration 0.
+3. Scoped-commit the scorer BEFORE the loop starts. From that commit on,
+   score.sh is Split-mode locked: measurement bugs may be fixed, "what
+   good means" may not be redefined (rules/autoresearch.md).
+
+Never start a loop against a scorer that hasn't been run once by hand.
+
 ### 1. Read reference materials
 
-Read these files to understand the GOAL.md pattern:
-- `vendor/goal-md/template/GOAL.md` — the canonical template (5 required elements)
-- `vendor/goal-md/examples/scoring-scripts.md` — fitness function patterns
-- At least one example: `vendor/goal-md/examples/api-test-coverage.md` or `perf-optimization.md`
+Read these files to understand the GOAL.md pattern (installed at
+`~/.buildplaybook/goal-md/`; inside the playbook repo: `vendor/goal-md/`):
+- `template/GOAL.md` — the canonical template (5 required elements)
+- `examples/scoring-scripts.md` — fitness function patterns
+- At least one example: `examples/api-test-coverage.md` or `perf-optimization.md`
 
 ### 2. Determine operating mode
 

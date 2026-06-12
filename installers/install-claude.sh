@@ -129,3 +129,12 @@ mkdir -p "$BP_DIR/bin"
 cp "$SCRIPT_DIR/adapters/headless/run-agent.sh" "$BP_DIR/bin/run-agent.sh"
 chmod +x "$BP_DIR/bin/run-agent.sh"
 echo "  headless adapter → ~/.buildplaybook/bin/run-agent.sh"
+
+# ─────────────────────────────────────
+# Phase 11: Autoresearch assets (/improve, /lazy-dev need these in target projects)
+# ─────────────────────────────────────
+mkdir -p "$BP_DIR/goal-md"
+cp -r "$SCRIPT_DIR/vendor/goal-md/template" "$SCRIPT_DIR/vendor/goal-md/examples" "$BP_DIR/goal-md/"
+cp "$SCRIPT_DIR/scripts/score.sh" "$BP_DIR/goal-md/score.sh"
+chmod +x "$BP_DIR/goal-md/score.sh"
+echo "  goal-md templates + reference scorer → ~/.buildplaybook/goal-md/"

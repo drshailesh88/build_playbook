@@ -1,0 +1,8 @@
+# Discovery-surface invariant: every command protocol is findable without founder memory.
+# Born 2026-06-12: /improve + /lazy-dev (and 17 others) existed but no discovery surface knew them.
+# Every commands/*.md must appear in the /playbook:commands quick reference
+for f in commands/*.md; do n=$(basename "$f" .md); grep -q "$n" commands/commands.md || { echo "MISSING from commands.md: $n"; exit 1; }; done
+# The autoresearch scorer must ship to target projects, not live only in this repo
+grep -q 'goal-md' installers/install-claude.sh
+# The improvement engine stays reachable from the orientation command
+grep -q 'playbook:improve' commands/where-am-i.md
