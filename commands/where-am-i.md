@@ -36,6 +36,7 @@ Then run:
 ```bash
 git log --oneline -5             # Last 5 commits
 git status --short               # Uncommitted changes
+grep -rln --include="*.md" "RESUME-FROM-HERE \[open\]" . 2>/dev/null  # Paused sessions
 gh issue list --state open --limit 5 2>/dev/null  # Open issues
 ```
 
@@ -58,6 +59,7 @@ Quality score: [XX.XX] ([TEMPERATURE]) | Weakest: [dimension] ([score])
 [One sentence explaining why this is the right next step]
 
 🧠 OPEN LOOPS
+Paused sessions: [N open RESUME-FROM-HERE markers — protocol + position each, "run /playbook:pickup" / "none"]
 Dumps: [N unconsumed fragments — list tags if any touch the next action's module]
 Founder decisions pending: [from STATE.md "Open founder decisions" — or "none"]
 DEC ledger: [clean / N allocated-but-unwritten — LEAK]
@@ -85,6 +87,7 @@ Otherwise use this routing logic (adapted from GSD progress Routes A-F):
 
 | State | Next Action |
 |-------|-------------|
+| Open `RESUME-FROM-HERE [open]` marker | `/playbook:pickup` — "A paused session is waiting; resume it before starting anything new" |
 | No `.planning/` directory | `/gsd:map-codebase` — "Map your existing codebase before starting" |
 | `.planning/` exists but no ROADMAP.md | `/gsd:new-milestone` or `/prd-to-gsd` — "Create your first milestone" |
 | Phase has no CONTEXT.md | `/gsd:discuss-phase [N]` — "Flesh out decisions before planning" |
@@ -102,7 +105,7 @@ running. List the uncommitted paths, identify which the current session
 owns, and recommend `git add <those paths>` only. Files of unknown
 ownership stay untouched and get named in the output.
 
-If multiple conditions are true, prioritize: uncommitted changes > quality regression > current phase work > open issues.
+If multiple conditions are true, prioritize: open resume markers > uncommitted changes > quality regression > current phase work > open issues.
 
 ### 4. Ralph State Aggregation
 

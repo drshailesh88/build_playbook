@@ -50,19 +50,24 @@ cache expires in minutes, so a session resumed hours later re-reads its
 whole conversation uncached on every message. Never continue a session
 that sat idle for hours; checkpoint, close, resume fresh.
 
-When the founder signals pause, in any phrasing ("sleepy", "stopping",
-"continue tomorrow"):
+When the founder signals pause — explicitly via `/playbook:pause`, or in
+any phrasing ("sleepy", "stopping", "continue tomorrow") — run the pause
+protocol (`pause.md` in the playbook commands; follow it exactly):
 
 1. Flush everything ruled or decided so far to its proper artifact and
    commit (scoped add).
-2. Append a `RESUME-FROM-HERE` marker to the session's natural log or
-   artifact — where you stopped + the next undecided question, verbatim.
-   No natural log? Write `.planning/handoffs/<date>-<purpose>.md` instead.
-3. Confirm the commit hash + resume point in ONE line. The founder closes.
+2. Append the canonical `RESUME-FROM-HERE [open]` block (format defined
+   in `pause.md`) to the session's natural log or artifact — exact
+   protocol + args to re-run, position, next undecided question verbatim,
+   read-first paths, fingerprints. No natural log? Write
+   `.planning/handoffs/<date>-<purpose>.md` instead.
+3. Confirm the commit hash + resume point in ONE line. The founder closes
+   and resumes tomorrow in a FRESH session via `/playbook:pickup` — never
+   via the vendor's stale-session resume.
 
-Mirror rule: when STARTING any interactive protocol, check its artifact
-for an unconsumed `RESUME-FROM-HERE` marker first — resume from it, and
-never re-ask what is already ruled.
+Mirror rule: when STARTING any interactive protocol, check for an
+unconsumed `RESUME-FROM-HERE [open]` marker first (`/playbook:pickup`
+automates this) — resume from it, and never re-ask what is already ruled.
 
 ## When you finish or abandon a task
 

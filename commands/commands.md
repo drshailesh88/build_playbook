@@ -57,6 +57,8 @@ Show the user a quick-reference of ALL available playbook commands, organized by
 - `/playbook:eval-check` — Run deterministic fixture evals for playbook command outputs
 
 ## Standalone
+- `/playbook:pause` — Tired? Checkpoint this session (flush + commit + RESUME-FROM-HERE marker), close, sleep
+- `/playbook:pickup` — Fresh session next day: find the marker, resume the exact protocol at the exact question
 - `/playbook:compact-context` — Save session state before auto-compaction
 - `/playbook:security-audit` — 6-check OWASP security review
 - `/playbook:verify-with-codex` — Cross-model code review

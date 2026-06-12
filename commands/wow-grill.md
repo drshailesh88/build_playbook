@@ -14,7 +14,9 @@ Input: `$ARGUMENTS` — module name. One module per session.
 ## Read first (the agenda builds itself)
 
 0. **Resume check:** if a grill-log for this module already exists with a
-   `RESUME-FROM-HERE` marker, this is a resumed grill — load the
+   `RESUME-FROM-HERE [open]` marker, this is a resumed grill — claim the
+   marker (per `pickup.md`: flip to `[consumed]`, fill consumed-by,
+   commit), load the
    already-stamped WOW-DELTA verdicts + the marker, confirm the resume
    point to the founder in one line, and continue from the next undecided
    item. NEVER re-ask ruled items.
@@ -71,16 +73,20 @@ expires within minutes — typing into a long stale session re-reads the
 entire conversation uncached at full price, every message. So never
 resume in-place after hours away. Instead:
 
+Run `/playbook:pause` (or follow `pause.md` when the founder just says
+they're tired):
+
 1. **Checkpoint NOW:** write every verdict ruled so far to disk — DECs,
    grill-log entries, WOW-DELTA items stamped — and commit (scoped add).
-2. **Append a `RESUME-FROM-HERE` block** to the grill-log: which fork the
-   session stopped at + the next undecided question, verbatim.
+2. **Append the canonical `RESUME-FROM-HERE [open]` block** (format in
+   `pause.md`) to the grill-log: which fork the session stopped at + the
+   next undecided question, verbatim.
 3. **Confirm commit hash + resume point in one line**, then the founder
    closes the session.
 
-Resume = run this command again in a FRESH session; step 0 of "Read
-first" picks up from the marker. Cheap (reads only artifacts), lossless
-(everything ruled is already on disk).
+Resume = `/playbook:pickup` in a FRESH session (or run this command
+again; step 0 of "Read first" honors the marker). Cheap (reads only
+artifacts), lossless (everything ruled is already on disk).
 
 ## Verdict audit (mandatory close, DEC-012)
 
